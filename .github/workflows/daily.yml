@@ -1,0 +1,150 @@
+name: Daily leaflets
+
+# One pipeline run, then the site goes to GitHub Pages, to your own webhosting
+# over FTP, or to both. Choose with the repository variable DEPLOY_TARGET:
+#   pages (default) | ftp | both
+# See README → "Nasazení".
+
+on:
+  schedule:
+    - cron: "41 5 * * *"   # 06:41 Prague time in winter (05:41 UTC); leaflets for the day are online by then
+  workflow_dispatch:
+    inputs:
+      vision:
+        description: "Run the vision model (costs money)"
+        type: boolean
+        default: true
+
+permissions:
+  contents: write   # push the database to the 'data' branch
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pipeline
+  cancel-in-progress: false
+
+jobs:
+  pipeline:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - run: pip install -r requirements.txt
+
+      # The SQLite file holds the price history. It lives on its own branch
+      # 'data' as a single commit without history, so the repository does not
+      # grow by a full copy of the database every day.
+      - name: Restore database from the 'data' branch
+        run: |
+          mkdir -p data
+          if git fetch --depth=1 origin data 2>/dev/null; then
+            git show FETCH_HEAD:lovec.db > data/lovec.db
+            echo "restored $(du -h data/lovec.db | cut -f1)"
+          else
+            echo "no 'data' branch yet – starting with an empty database"
+          fi
+
+      - name: Run pipeline
+        env:
+          VISION_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+          VISION_MODEL: ${{ vars.VISION_MODEL || 'google/gemini-2.5-flash' }}
+          VISION_BASE_URL: ${{ vars.VISION_BASE_URL || 'https://openrouter.ai/api/v1' }}
+          VISION_MAX_PAGES_PER_RUN: ${{ vars.VISION_MAX_PAGES_PER_RUN || '400' }}
+          LIDL_REGION_CODE: ${{ vars.LIDL_REGION_CODE || '0' }}
+          KAUFLAND_REGION_CODE: ${{ vars.KAUFLAND_REGION_CODE || '0' }}
+          USE_VISION: ${{ github.event_name == 'schedule' || inputs.vision }}
+        run: |
+          if [ "$USE_VISION" = "true" ] && [ -n "$VISION_API_KEY" ]; then
+            python -m pipeline run --vision
+          else
+            python -m pipeline run
+          fi
+
+      - name: Save database to the 'data' branch (no history)
+        env:
+          GIT_AUTHOR_NAME: lovec-slev bot
+          GIT_AUTHOR_EMAIL: bot@users.noreply.github.com
+          GIT_COMMITTER_NAME: lovec-slev bot
+          GIT_COMMITTER_EMAIL: bot@users.noreply.github.com
+        run: |
+          blob=$(git hash-object -w data/lovec.db)
+          tree=$(printf '100644 blob %s\tlovec.db\n' "$blob" | git mktree)
+          commit=$(git commit-tree "$tree" -m "db $(date -u +%F)")
+          git push --force origin "$commit:refs/heads/data"
+
+      # Safety net: the last 30 daily databases are kept as workflow artifacts.
+      - uses: actions/upload-artifact@v4
+        with:
+          name: lovec-db-${{ github.run_number }}
+          path: data/lovec.db
+          retention-days: 30
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: site-data
+          path: public/data/
+          retention-days: 3
+
+  pages:
+    needs: pipeline
+    if: ${{ vars.DEPLOY_TARGET == '' || vars.DEPLOY_TARGET == 'pages' || vars.DEPLOY_TARGET == 'both' }}
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: site-data
+          path: public/data/
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run build
+        env:
+          # /<repo>/ for https://<user>.github.io/<repo>/; set PAGES_BASE=/ when Pages uses your own domain
+          VITE_BASE: ${{ vars.PAGES_BASE || format('/{0}/', github.event.repository.name) }}
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: dist
+      - id: deployment
+        uses: actions/deploy-pages@v4
+
+  ftp:
+    needs: pipeline
+    if: ${{ vars.DEPLOY_TARGET == 'ftp' || vars.DEPLOY_TARGET == 'both' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: site-data
+          path: public/data/
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run build
+        env:
+          VITE_BASE: ${{ vars.FTP_BASE || '/' }}   # the site sits in the root of your domain
+      - name: Upload to webhosting
+        uses: SamKirkland/FTP-Deploy-Action@v4.3.5
+        with:
+          server: ${{ secrets.FTP_SERVER }}
+          username: ${{ secrets.FTP_USERNAME }}
+          password: ${{ secrets.FTP_PASSWORD }}
+          protocol: ${{ vars.FTP_PROTOCOL || 'ftps' }}   # ftps | ftp | ftps-legacy
+          port: ${{ vars.FTP_PORT || '21' }}
+          local-dir: ./dist/
+          server-dir: ${{ vars.FTP_SERVER_DIR || './www/' }}

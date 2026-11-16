@@ -161,6 +161,7 @@ export const ShoppingListDrawer: React.FC<ShoppingListDrawerProps> = ({
               </div>
             </div>
 
+            {dealsTotalCzCzk > 0 && (
             <div className="border-l border-white/10 pl-4">
               <span className="text-xs text-emerald-400 block font-medium">Úspora vs nákup v ČR:</span>
               <div className="text-2xl font-black text-emerald-400 font-mono tabular-nums">
@@ -170,6 +171,7 @@ export const ShoppingListDrawer: React.FC<ShoppingListDrawerProps> = ({
                 Ušetříte cca {totalSavedPct} % rozpočtu
               </div>
             </div>
+            )}
           </div>
 
           {/* Loyalty App Checklist Alert */}

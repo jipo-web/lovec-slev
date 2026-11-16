@@ -25,8 +25,9 @@ export const DealDetailModal: React.FC<DealDetailModalProps> = ({
   const store = STORES[deal.store];
   const promoCzk = deal.promoPricePln * exchangeRate;
   const regularCzk = deal.regularPricePln * exchangeRate;
-  const savingsVsCzCzk = Math.max(0, deal.czechEquivalentCzk - promoCzk);
-  const savingsVsCzPct = Math.round((savingsVsCzCzk / deal.czechEquivalentCzk) * 100);
+  const hasCzPrice = deal.czechEquivalentCzk > 0;
+  const savingsVsCzCzk = hasCzPrice ? Math.max(0, deal.czechEquivalentCzk - promoCzk) : 0;
+  const savingsVsCzPct = hasCzPrice ? Math.round((savingsVsCzCzk / deal.czechEquivalentCzk) * 100) : 0;
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs">
@@ -128,6 +129,7 @@ export const DealDetailModal: React.FC<DealDetailModalProps> = ({
               </div>
             </div>
 
+            {hasCzPrice && (
             <div className="p-3.5 rounded-2xl bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-800/60">
               <span className="text-[11px] font-medium text-emerald-700 dark:text-emerald-400 block mb-1">
                 Srovnání s běžnou cenou v ČR
@@ -142,6 +144,7 @@ export const DealDetailModal: React.FC<DealDetailModalProps> = ({
                 na 1 balení / měrnou jednotku
               </div>
             </div>
+            )}
           </div>
 
           {/* Store App & Loyalty requirement checklist */}

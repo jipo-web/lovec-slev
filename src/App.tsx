@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { StoreId, CategoryId, TrickType, DealItem, CartItem, CustomCartItem } from './types';
+import { StoreId, CategoryId, TrickType, DealItem, CartItem, CustomCartItem, SortKey, Verdict } from './types';
 import { DEALS } from './data/deals';
+import { loadOffers, loadLeaflets, offerToDealItem, PipelineLeaflet } from './data/loadData';
 import { STORES } from './data/stores';
 import { Navbar } from './components/Navbar';
 import { StoreFilterBar } from './components/StoreFilterBar';
@@ -8,6 +9,8 @@ import { FilterToolbar } from './components/FilterToolbar';
 import { DealCard } from './components/DealCard';
 import { DealDetailModal } from './components/DealDetailModal';
 import { FlyerReaderModal } from './components/FlyerReaderModal';
+import { DayPicker, toIsoDay } from './components/DayPicker';
+import { LeafletGrid } from './components/LeafletGrid';
 import { ShoppingListDrawer } from './components/ShoppingListDrawer';
 import { BorderShoppingGuide } from './components/BorderShoppingGuide';
 import { ShieldAlert, Sparkles, TrendingUp, ShoppingBag, ArrowRight, HelpCircle } from 'lucide-react';
@@ -21,7 +24,14 @@ export default function App() {
   const [selectedCategory, setSelectedCategory] = useState<CategoryId>('all');
   const [selectedTrickType, setSelectedTrickType] = useState<TrickType | 'all'>('all');
   const [searchQuery, setSearchQuery] = useState('');
-  const [sortBy, setSortBy] = useState<'savings_pct' | 'price_asc' | 'discount_pln' | 'title'>('savings_pct');
+  const [sortBy, setSortBy] = useState<SortKey>('savings_pct');
+  const [selectedVerdict, setSelectedVerdict] = useState<Verdict | 'all'>('all');
+  const [selectedDay, setSelectedDay] = useState<string>(() => toIsoDay(new Date()));
+
+  // Data source: pipeline JSON with mock fallback
+  const [allDeals, setAllDeals] = useState<DealItem[]>(DEALS);
+  const [generatedAt, setGeneratedAt] = useState<string | null>(null);
+  const [leaflets, setLeaflets] = useState<PipelineLeaflet[] | null>(null);
 
   // Currency & Modals
   const [exchangeRate, setExchangeRate] = useState<number>(() => {
@@ -55,10 +65,35 @@ export default function App() {
     }
   });
 
-  // Sync exchange rate
+  // Load real data from the pipeline (falls back to mock DEALS)
   useEffect(() => {
-    localStorage.setItem('lovci_pln_rate', exchangeRate.toString());
-  }, [exchangeRate]);
+    let cancelled = false;
+    loadOffers().then((file) => {
+      if (cancelled || !file || !file.offers || file.offers.length === 0) return;
+      setAllDeals(file.offers.map((o) => offerToDealItem(o, file.rate_czk_per_pln)));
+      setGeneratedAt(file.generated_at);
+      if (file.rate_czk_per_pln > 0 && localStorage.getItem('lovci_pln_rate') === null) {
+        setExchangeRate(file.rate_czk_per_pln);
+      }
+      setSortBy(file.offers.some((o) => o.verdict) ? 'score' : 'savings_pct');
+    });
+    loadLeaflets().then((file) => {
+      if (cancelled || !file || !file.leaflets || file.leaflets.length === 0) return;
+      setLeaflets(file.leaflets);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const hasVerdicts = useMemo(() => allDeals.some((d) => d.verdict), [allDeals]);
+
+  // Persist exchange rate only when the user changes it manually,
+  // so the pipeline rate is not frozen as a "custom" rate.
+  const handleSetExchangeRate = (rate: number) => {
+    setExchangeRate(rate);
+    localStorage.setItem('lovci_pln_rate', rate.toString());
+  };
 
   // Sync theme
   useEffect(() => {
@@ -149,7 +184,11 @@ export default function App() {
 
   // Filtered & sorted deals
   const filteredDeals = useMemo(() => {
-    return DEALS.filter((deal) => {
+    return allDeals.filter((deal) => {
+      // Day filter (ISO date strings compare lexicographically)
+      // (only for real pipeline data; mock deals have outdated validity)
+      if (generatedAt && (deal.validFrom > selectedDay || deal.validUntil < selectedDay)) return false;
+
       // Store filter
       if (selectedStore !== 'all' && deal.store !== selectedStore) return false;
 
@@ -158,6 +197,9 @@ export default function App() {
 
       // Trick type filter
       if (selectedTrickType !== 'all' && deal.trickType !== selectedTrickType) return false;
+
+      // Verdict filter
+      if (selectedVerdict !== 'all' && deal.verdict !== selectedVerdict) return false;
 
       // Search query
       if (searchQuery.trim()) {
@@ -171,9 +213,15 @@ export default function App() {
 
       return true;
     }).sort((a, b) => {
+      if (sortBy === 'score') {
+        return (b.score ?? -Infinity) - (a.score ?? -Infinity);
+      }
       if (sortBy === 'savings_pct') {
-        const aSaving = (a.czechEquivalentCzk - a.promoPricePln * exchangeRate) / a.czechEquivalentCzk;
-        const bSaving = (b.czechEquivalentCzk - b.promoPricePln * exchangeRate) / b.czechEquivalentCzk;
+        const saving = (d: DealItem) =>
+          d.czechEquivalentCzk > 0 ? (d.czechEquivalentCzk - d.promoPricePln * exchangeRate) / d.czechEquivalentCzk : -Infinity;
+        const aSaving = saving(a);
+        const bSaving = saving(b);
+        if (aSaving === bSaving) return b.regularPricePln - b.promoPricePln - (a.regularPricePln - a.promoPricePln);
         return bSaving - aSaving;
       }
       if (sortBy === 'price_asc') {
@@ -186,7 +234,7 @@ export default function App() {
       }
       return a.title.localeCompare(b.title, 'cs');
     });
-  }, [selectedStore, selectedCategory, selectedTrickType, searchQuery, sortBy, exchangeRate]);
+  }, [allDeals, generatedAt, selectedDay, selectedStore, selectedCategory, selectedTrickType, selectedVerdict, searchQuery, sortBy, exchangeRate]);
 
   // Deal counts by store
   const dealCountsByStore = useMemo(() => {
@@ -197,11 +245,11 @@ export default function App() {
       kaufland: 0,
       carrefour: 0,
     };
-    DEALS.forEach((d) => {
+    allDeals.forEach((d) => {
       counts[d.store] = (counts[d.store] || 0) + 1;
     });
     return counts;
-  }, []);
+  }, [allDeals]);
 
   const cartItemIds = useMemo(() => new Set(cart.map((c) => c.deal.id)), [cart]);
 
@@ -212,7 +260,7 @@ export default function App() {
         activeTab={activeTab}
         setActiveTab={setActiveTab}
         exchangeRate={exchangeRate}
-        setExchangeRate={setExchangeRate}
+        setExchangeRate={handleSetExchangeRate}
         cartCount={totalCartCount}
         cartTotalCzk={totalCartCzk}
         totalSavedCzk={totalSavedCzk}
@@ -265,6 +313,16 @@ export default function App() {
         {/* Tab 1: Deals & Price Comparison */}
         {activeTab === 'deals' && (
           <div className="space-y-6">
+            {/* Data source badge */}
+            <div className="text-[11px] font-mono text-slate-500 dark:text-slate-400">
+              {generatedAt
+                ? `Data z letáků: ${new Date(generatedAt).toLocaleString('cs-CZ', { dateStyle: 'short', timeStyle: 'short' })}`
+                : 'Ukázková data'}
+            </div>
+
+            {/* Day picker */}
+            {generatedAt && <DayPicker selectedDay={selectedDay} onSelectDay={setSelectedDay} />}
+
             {/* Store switcher */}
             <StoreFilterBar
               selectedStore={selectedStore}
@@ -283,6 +341,9 @@ export default function App() {
               sortBy={sortBy}
               onSortChange={setSortBy}
               resultsCount={filteredDeals.length}
+              hasVerdicts={hasVerdicts}
+              selectedVerdict={selectedVerdict}
+              onVerdictChange={setSelectedVerdict}
             />
 
             {/* Deals Grid */}
@@ -319,6 +380,7 @@ export default function App() {
                     setSelectedStore('all');
                     setSelectedCategory('all');
                     setSelectedTrickType('all');
+                    setSelectedVerdict('all');
                     setSearchQuery('');
                   }}
                   className="px-4 py-2 rounded-xl bg-slate-900 text-white dark:bg-white dark:text-slate-900 text-xs font-semibold"
@@ -332,12 +394,18 @@ export default function App() {
 
         {/* Tab 2: Interactive Flyer Reader */}
         {activeTab === 'flyers' && (
-          <FlyerReaderModal
-            initialStore={selectedStore === 'all' ? 'dino' : selectedStore}
-            exchangeRate={exchangeRate}
-            onAddToCart={handleAddToCart}
-            cartItemIds={cartItemIds}
-          />
+          leaflets ? (
+            <LeafletGrid
+              leaflets={leaflets.filter((lf) => selectedStore === 'all' || lf.store === selectedStore)}
+            />
+          ) : (
+            <FlyerReaderModal
+              initialStore={selectedStore === 'all' ? 'dino' : selectedStore}
+              exchangeRate={exchangeRate}
+              onAddToCart={handleAddToCart}
+              cartItemIds={cartItemIds}
+            />
+          )
         )}
 
         {/* Tab 3: Cross-border Shopper Guide */}

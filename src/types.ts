@@ -1,5 +1,9 @@
 export type StoreId = 'biedronka' | 'lidl' | 'kaufland' | 'carrefour' | 'dino';
 
+export type Verdict = 'trhak' | 'dobra_koupe' | 'nic_moc' | 'past';
+
+export type SortKey = 'score' | 'savings_pct' | 'price_asc' | 'discount_pln' | 'title';
+
 export type TrickType = 'clean' | 'conditional_card' | 'trick_warning';
 
 export type CategoryId = 
@@ -35,6 +39,16 @@ export interface DealItem {
   flyerPage: number;
   flyerName: string;
   isHeroPromo?: boolean;
+  // Optional fields filled from the data pipeline
+  verdict?: Verdict | null;
+  score?: number | null;
+  reason?: string | null;
+  unitPricePln?: number | null;
+  unitPriceUnit?: string | null;
+  pageImageUrl?: string | null;
+  bbox?: [number, number, number, number] | null;
+  leafletId?: string;
+  source?: string;
 }
 
 export interface StoreInfo {

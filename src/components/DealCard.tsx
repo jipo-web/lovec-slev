@@ -1,7 +1,26 @@
 import React from 'react';
-import { DealItem } from '../types';
+import { DealItem, Verdict } from '../types';
 import { STORES } from '../data/stores';
 import { Plus, Minus, Check, ShieldCheck, AlertTriangle, AlertCircle, ExternalLink, HelpCircle } from 'lucide-react';
+
+const VERDICT_STYLES: Record<Verdict, { label: string; cls: string }> = {
+  trhak: {
+    label: 'Trhák',
+    cls: 'bg-emerald-100 text-emerald-800 border-emerald-200 dark:bg-emerald-950/50 dark:text-emerald-300 dark:border-emerald-800',
+  },
+  dobra_koupe: {
+    label: 'Dobrá koupě',
+    cls: 'bg-sky-100 text-sky-800 border-sky-200 dark:bg-sky-950/50 dark:text-sky-300 dark:border-sky-800',
+  },
+  nic_moc: {
+    label: 'Nic moc',
+    cls: 'bg-slate-100 text-slate-700 border-slate-200 dark:bg-slate-800 dark:text-slate-300 dark:border-slate-700',
+  },
+  past: {
+    label: 'Past',
+    cls: 'bg-rose-100 text-rose-800 border-rose-200 dark:bg-rose-950/50 dark:text-rose-300 dark:border-rose-800',
+  },
+};
 
 interface DealCardProps {
   deal: DealItem;
@@ -23,8 +42,10 @@ export const DealCard: React.FC<DealCardProps> = ({
   const store = STORES[deal.store];
   const promoCzk = deal.promoPricePln * exchangeRate;
   const regularCzk = deal.regularPricePln * exchangeRate;
-  const savingsVsCzCzk = Math.max(0, deal.czechEquivalentCzk - promoCzk);
-  const savingsVsCzPct = Math.round((savingsVsCzCzk / deal.czechEquivalentCzk) * 100);
+  const hasCzPrice = deal.czechEquivalentCzk > 0;
+  const savingsVsCzCzk = hasCzPrice ? Math.max(0, deal.czechEquivalentCzk - promoCzk) : 0;
+  const savingsVsCzPct = hasCzPrice ? Math.round((savingsVsCzCzk / deal.czechEquivalentCzk) * 100) : 0;
+  const verdictBadge = deal.verdict ? VERDICT_STYLES[deal.verdict] : null;
 
   // Trick indicator style
   const getTrickBadge = () => {
@@ -96,6 +117,21 @@ export const DealCard: React.FC<DealCardProps> = ({
               <span>·</span>
               <span>{deal.unit}</span>
             </div>
+            {verdictBadge && (
+              <span className={`inline-block mt-1.5 text-[10px] font-bold px-2 py-0.5 rounded-md border ${verdictBadge.cls}`}>
+                {verdictBadge.label}
+              </span>
+            )}
+            {deal.unitPricePln != null && deal.unitPriceUnit && (
+              <div className="mt-1 text-[11px] text-slate-500 dark:text-slate-400 font-mono tabular-nums">
+                {deal.unitPricePln.toFixed(2)} zł/{deal.unitPriceUnit}
+              </div>
+            )}
+            {deal.reason && (
+              <p className="mt-1 text-[11px] text-slate-600 dark:text-slate-300 leading-snug line-clamp-1">
+                {deal.reason}
+              </p>
+            )}
           </div>
 
           {/* Savings Badge */}
@@ -137,12 +173,14 @@ export const DealCard: React.FC<DealCardProps> = ({
             </div>
 
             {/* Czech Reference Price */}
+            {hasCzPrice && (
             <div className="text-right bg-slate-50 dark:bg-slate-800/80 p-2 rounded-xl border border-slate-100 dark:border-slate-800">
               <span className="text-[10px] text-slate-400 block font-medium">Běžně v Česku:</span>
               <span className="text-xs font-bold text-slate-700 dark:text-slate-200 font-mono tabular-nums">
                 ~{deal.czechEquivalentCzk.toFixed(0)} Kč
               </span>
             </div>
+            )}
           </div>
 
           {/* Ojebometer Tag & Short Note */}

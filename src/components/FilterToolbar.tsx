@@ -1,5 +1,5 @@
 import React from 'react';
-import { CategoryId, TrickType } from '../types';
+import { CategoryId, SortKey, TrickType, Verdict } from '../types';
 import { Search, SlidersHorizontal, ShieldCheck, AlertCircle, Sparkles } from 'lucide-react';
 
 interface FilterToolbarProps {
@@ -9,10 +9,21 @@ interface FilterToolbarProps {
   onCategoryChange: (cat: CategoryId) => void;
   selectedTrickType: TrickType | 'all';
   onTrickTypeChange: (trick: TrickType | 'all') => void;
-  sortBy: 'savings_pct' | 'price_asc' | 'discount_pln' | 'title';
-  onSortChange: (sort: 'savings_pct' | 'price_asc' | 'discount_pln' | 'title') => void;
+  sortBy: SortKey;
+  onSortChange: (sort: SortKey) => void;
   resultsCount: number;
+  hasVerdicts?: boolean;
+  selectedVerdict?: Verdict | 'all';
+  onVerdictChange?: (verdict: Verdict | 'all') => void;
 }
+
+const VERDICT_FILTERS: { id: Verdict | 'all'; label: string; active: string; idle: string }[] = [
+  { id: 'all', label: 'Vše', active: 'bg-slate-800 text-white dark:bg-slate-200 dark:text-slate-900', idle: 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800' },
+  { id: 'trhak', label: 'Trhák', active: 'bg-emerald-600 text-white', idle: 'text-emerald-700 dark:text-emerald-400 hover:bg-emerald-50 dark:hover:bg-emerald-950/30' },
+  { id: 'dobra_koupe', label: 'Dobrá koupě', active: 'bg-sky-600 text-white', idle: 'text-sky-700 dark:text-sky-400 hover:bg-sky-50 dark:hover:bg-sky-950/30' },
+  { id: 'nic_moc', label: 'Nic moc', active: 'bg-slate-600 text-white', idle: 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800' },
+  { id: 'past', label: 'Past', active: 'bg-rose-600 text-white', idle: 'text-rose-700 dark:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950/30' },
+];
 
 export const FilterToolbar: React.FC<FilterToolbarProps> = ({
   searchQuery,
@@ -24,6 +35,9 @@ export const FilterToolbar: React.FC<FilterToolbarProps> = ({
   sortBy,
   onSortChange,
   resultsCount,
+  hasVerdicts = false,
+  selectedVerdict = 'all',
+  onVerdictChange,
 }) => {
   const categories: { id: CategoryId; label: string }[] = [
     { id: 'all', label: 'Všechny kategorie' },
@@ -34,6 +48,7 @@ export const FilterToolbar: React.FC<FilterToolbarProps> = ({
     { id: 'trvanlive', label: '🌾 Trvanlivé potraviny' },
     { id: 'napoje', label: '🍺 Nápoje & pivo' },
     { id: 'sladkosti', label: '🍫 Sladkosti' },
+    { id: 'ovoce_zelenina', label: '🥬 Ovoce & zelenina' },
   ];
 
   return (
@@ -67,9 +82,10 @@ export const FilterToolbar: React.FC<FilterToolbarProps> = ({
           </span>
           <select
             value={sortBy}
-            onChange={(e) => onSortChange(e.target.value as any)}
+            onChange={(e) => onSortChange(e.target.value as SortKey)}
             className="text-xs py-2 px-3 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white focus:outline-none focus:border-red-500 font-medium"
           >
+            {hasVerdicts && <option value="score">Nejlepší nabídky (skóre)</option>}
             <option value="savings_pct">Největší úspora vs ČR (%)</option>
             <option value="price_asc">Nejlevnější cena (CZK)</option>
             <option value="discount_pln">Nejvyšší sleva v letáku (PLN)</option>
@@ -150,6 +166,23 @@ export const FilterToolbar: React.FC<FilterToolbarProps> = ({
             <span>Pozor na chyták (multi-buy, limity)</span>
           </button>
         </div>
+
+        {hasVerdicts && onVerdictChange && (
+          <div className="flex items-center gap-1.5 flex-wrap w-full">
+            <span className="text-slate-500 dark:text-slate-400 font-medium mr-1">Verdikt:</span>
+            {VERDICT_FILTERS.map((v) => (
+              <button
+                key={v.id}
+                onClick={() => onVerdictChange(v.id)}
+                className={`px-2.5 py-1 rounded-md transition-colors ${
+                  selectedVerdict === v.id ? `${v.active} font-semibold` : v.idle
+                }`}
+              >
+                {v.label}
+              </button>
+            ))}
+          </div>
+        )}
 
         <div className="text-slate-400 text-[11px] font-mono tabular-nums">
           Nalezeno {resultsCount} {resultsCount === 1 ? 'položka' : resultsCount < 5 ? 'položky' : 'položek'}

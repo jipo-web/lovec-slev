@@ -67,10 +67,31 @@ export default function App() {
   };
 
   // Open the flyer page a deal comes from (from the deal card header)
+  // "Strana N" = position of the offer's own page image in the leaflet's current
+  // list. Stores reorder pages and insert ads, so the stored page_no can drift.
+  useEffect(() => {
+    if (!leaflets?.length) return;
+    const pos = new Map<string, number>();
+    leaflets.forEach((lf) => lf.page_image_urls.forEach((u, i) => pos.set(u, i + 1)));
+    setAllDeals((prev) => {
+      let changed = false;
+      const next = prev.map((d) => {
+        const p = d.pageImageUrl ? pos.get(d.pageImageUrl) : undefined;
+        if (p && p !== d.flyerPage) {
+          changed = true;
+          return { ...d, flyerPage: p };
+        }
+        return d;
+      });
+      return changed ? next : prev;
+    });
+  }, [leaflets, allDeals]);
+
   const handleOpenFlyerPage = (deal: DealItem) => {
     const leaflet = leaflets?.find((lf) => lf.id === deal.leafletId);
-    if (leaflet && leaflet.page_image_urls.length > 0) {
-      setFlyerPageView({ leaflet, page: deal.flyerPage });
+    const idx = leaflet && deal.pageImageUrl ? leaflet.page_image_urls.indexOf(deal.pageImageUrl) : -1;
+    if (leaflet && idx >= 0) {
+      setFlyerPageView({ leaflet, page: idx + 1 });
       return;
     }
     if (deal.pageImageUrl) {

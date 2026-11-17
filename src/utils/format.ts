@@ -27,3 +27,41 @@ export function discountPct(promo: number, regular: number): number | null {
 
 /** Discounts under this threshold are not worth showing a strikethrough price for. */
 export const MIN_VISIBLE_DISCOUNT_PCT = 3;
+
+const WEEKDAYS = ['ne', 'po', 'út', 'st', 'čt', 'pá', 'so'];
+
+function parseIsoDay(iso: string): Date {
+  const [y, m, d] = iso.slice(0, 10).split('-').map(Number);
+  return new Date(y, m - 1, d);
+}
+
+function dayLabel(d: Date): string {
+  return `${WEEKDAYS[d.getDay()]} ${d.getDate()}. ${d.getMonth() + 1}.`;
+}
+
+export interface ValidityInfo {
+  /** "po 16. 11. – so 21. 11." or "jen po 16. 11." */
+  label: string;
+  /** "končí dnes" / "končí zítra" / "od zítra" … or null */
+  urgency: string | null;
+  /** Short promotion (≤ 3 days) or ending today/tomorrow – worth highlighting */
+  highlight: boolean;
+}
+
+/** Human validity of an offer relative to `today` (ISO day, defaults to now). */
+export function validityInfo(validFrom: string, validUntil: string, today?: string): ValidityInfo {
+  const a = parseIsoDay(validFrom);
+  const b = parseIsoDay(validUntil);
+  const t = today ? parseIsoDay(today) : new Date(new Date().getFullYear(), new Date().getMonth(), new Date().getDate());
+  const days = Math.round((b.getTime() - a.getTime()) / 86400000) + 1;
+  const toEnd = Math.round((b.getTime() - t.getTime()) / 86400000);
+  const toStart = Math.round((a.getTime() - t.getTime()) / 86400000);
+
+  const label = days === 1 ? `jen ${dayLabel(a)}` : `${dayLabel(a)} – ${dayLabel(b)}`;
+  let urgency: string | null = null;
+  if (toStart === 1) urgency = 'od zítra';
+  else if (toStart > 1) urgency = `od ${dayLabel(a)}`;
+  else if (toEnd === 0) urgency = 'končí dnes';
+  else if (toEnd === 1) urgency = 'končí zítra';
+  return { label, urgency, highlight: days <= 3 || (toStart <= 0 && toEnd <= 1) };
+}

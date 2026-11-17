@@ -471,6 +471,7 @@ export default function App() {
                         onUpdateQuantity={handleUpdateQuantity}
                         onOpenTrickModal={setActiveTrickModalDeal}
                         onOpenFlyerPage={handleOpenFlyerPage}
+                        selectedDay={selectedDay}
                       />
                     );
                   })}
@@ -496,6 +497,7 @@ export default function App() {
                       onUpdateQuantity={handleUpdateQuantity}
                       onOpenTrickModal={setActiveTrickModalDeal}
                       onOpenFlyerPage={handleOpenFlyerPage}
+                      selectedDay={selectedDay}
                     />
                   );
                 })}

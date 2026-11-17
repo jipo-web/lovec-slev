@@ -8,6 +8,7 @@
   renormalize         re-run normalisation on stored model output (free)
   translate           optional: Czech names (cheap text model); not part of run, the web shows Polish names
   build               write public/data/*.json
+  dates [--vision]    date banners of page sections ("czw.–sob. 12.11-14.11"), cheap model call
   run [--vision]      all of the above
   verify              one leaflet per store: counts, sample offers, cost estimate
 """
@@ -20,6 +21,7 @@ from datetime import date
 from pathlib import Path
 
 from . import db as dbm
+from . import dates as offer_dates
 from .build import build
 from .config import CACHE_DIR, VISION_MAX_PAGES_PER_RUN
 from .extract import structured, text_layer
@@ -67,11 +69,15 @@ def cmd_fetch(con, pdfs: bool = False) -> None:
 
 def _normalize_page(con, lf: Leaflet, page_no: int, raws: list[RawOffer], source: PageSource, rate: float) -> list[Offer]:
     img = lf.page_image_urls[page_no - 1] if 0 < page_no <= len(lf.page_image_urls) else None
+    regions = offer_dates.page_regions(con, lf.id, page_no)
     offers = []
     for i, r in enumerate(raws):
         o = normalize(r, leaflet_id=lf.id, store=lf.store, page_no=page_no, valid_from=lf.valid_from,
                       valid_to=lf.valid_to, page_image_url=img, source=source, rate_czk_per_pln=rate, idx=i)
         if o:
+            own_text = " ".join(filter(None, (r.conditions_text, r.discount_text)))
+            o.valid_from, o.valid_to = offer_dates.offer_validity(own_text, o.bbox, regions,
+                                                                  lf.valid_from, lf.valid_to)
             offers.append(o)
     drop_shared_bboxes(offers)
     dbm.save_page(con, lf.id, page_no, source.value, [r.model_dump() for r in raws], needs_review=not offers)
@@ -109,6 +115,44 @@ def cmd_renormalize(con) -> int:
 
 
 IMAGE_STORES = ("biedronka", "lidl", "kaufland")  # page images from the store API → vision model
+
+
+def cmd_dates(con, limit_pages: int = VISION_MAX_PAGES_PER_RUN) -> int:
+    """Read the date banners of every current page that has offers and no
+    entry in page_dates yet. Returns the number of pages processed."""
+    from .extract.page_dates import extract_dates
+    from .extract.vision import VISION_MODEL
+
+    offer_dates.ensure_schema(con)
+    today = date.today().isoformat()
+    rows = con.execute(
+        "SELECT DISTINCT o.leaflet_id, o.page_no FROM offers o "
+        "JOIN leaflets l ON l.id = o.leaflet_id "
+        "LEFT JOIN page_dates d ON d.leaflet_id = o.leaflet_id AND d.page_no = o.page_no "
+        "WHERE l.valid_to >= ? AND l.store IN ('biedronka','lidl','kaufland') AND d.leaflet_id IS NULL "
+        "ORDER BY l.valid_from, o.leaflet_id, o.page_no", (today,)).fetchall()
+    done = 0
+    leaflets: dict[str, Leaflet] = {}
+    for lid, page_no in rows:
+        if done >= limit_pages:
+            print(f"dates: budget of {limit_pages} pages reached, {len(rows) - done} left for the next run")
+            break
+        lf = leaflets.get(lid) or leaflets.setdefault(lid, dbm.row_to_leaflet(
+            con.execute("SELECT * FROM leaflets WHERE id=?", (lid,)).fetchone()))
+        if not (0 < page_no <= len(lf.page_image_urls)) or not lf.page_image_urls[page_no - 1]:
+            continue
+        img = CACHE_DIR / lf.store / f"{lf.id.split(':')[1]}-{page_no:03d}.jpg"
+        try:
+            download(lf.page_image_urls[page_no - 1], img)
+            regions = extract_dates(img)
+        except Exception as e:
+            print(f"[{lf.store}] dates failed p{page_no}: {e}", file=sys.stderr)
+            continue
+        con.execute("INSERT OR REPLACE INTO page_dates (leaflet_id, page_no, regions_json, model) VALUES (?,?,?,?)",
+                    (lid, page_no, json.dumps(regions, ensure_ascii=False), VISION_MODEL))
+        con.commit()
+        done += 1
+    return done
 
 
 def _vision_pages(con, lf: Leaflet, rate: float, budget: int) -> tuple[int, int, bool]:
@@ -218,7 +262,7 @@ def cmd_verify(con) -> None:
 
 def main(argv: list[str] | None = None) -> None:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("command", choices=["discover", "fetch", "extract", "renormalize", "translate", "score",
+    ap.add_argument("command", choices=["discover", "fetch", "extract", "dates", "renormalize", "translate", "score",
                                        "build", "run", "verify"])
     ap.add_argument("--vision", action="store_true", help="use the vision model where needed")
     ap.add_argument("--stores", nargs="*", help="limit discovery to these stores")
@@ -236,6 +280,8 @@ def main(argv: list[str] | None = None) -> None:
             cmd_fetch(con, a.pdf)
         if a.command in ("extract", "run"):
             cmd_extract(con, a.vision, a.max_pages, a.text_layer)
+        if a.command == "dates" or (a.command == "run" and a.vision):
+            print(f"dates: {cmd_dates(con, a.max_pages)} pages")
         if a.command in ("renormalize", "run"):
             print(f"renormalized {cmd_renormalize(con)} offers")
         if a.command == "translate":  # optional; the web shows the original Polish names

@@ -1,7 +1,9 @@
-import React, { useState } from 'react';
+import React, { useRef, useState } from 'react';
+import { copyText, whatsappUrl, smsUrl, nativeShare, canNativeShare } from '../utils/share';
+import { formatNum2 } from '../utils/format';
 import { CartItem, CustomCartItem, StoreId } from '../types';
 import { STORES } from '../data/stores';
-import { X, Plus, Minus, Trash2, Copy, Check, ShoppingBag, Smartphone, ShieldCheck, Sparkles } from 'lucide-react';
+import { X, Plus, Minus, Trash2, Copy, Check, ShoppingBag, Smartphone, ShieldCheck, Sparkles, MessageCircle, MessageSquare, Share2 } from 'lucide-react';
 
 interface ShoppingListDrawerProps {
   isOpen: boolean;
@@ -31,6 +33,8 @@ export const ShoppingListDrawer: React.FC<ShoppingListDrawerProps> = ({
   const [newCustomTitle, setNewCustomTitle] = useState('');
   const [newCustomPrice, setNewCustomPrice] = useState('');
   const [copiedSuccess, setCopiedSuccess] = useState(false);
+  const [manualCopyText, setManualCopyText] = useState<string | null>(null);
+  const manualRef = useRef<HTMLTextAreaElement>(null);
 
   if (!isOpen) return null;
 
@@ -68,16 +72,16 @@ export const ShoppingListDrawer: React.FC<ShoppingListDrawerProps> = ({
     setNewCustomPrice('');
   };
 
-  const handleCopyShoppingList = () => {
+  const buildShoppingListText = (): string => {
     let text = `🛒 NÁKUPNÍ SEZNAM DO POLSKA (lovec-slev.cz)\n`;
-    text += `Kurz: 1 PLN = ${exchangeRate.toFixed(2)} Kč\n\n`;
+    text += `Kurz: 1 zł = ${formatNum2(exchangeRate)} Kč\n\n`;
 
     if (cart.length > 0) {
       text += `--- POLOŽKY Z LETÁKŮ ---\n`;
       cart.forEach((item) => {
         const itemCzk = item.deal.promoPricePln * exchangeRate * item.quantity;
         text += `[ ] ${item.quantity}x ${item.deal.title} (${STORES[item.deal.store].name})\n`;
-        text += `    Cena: ${(item.deal.promoPricePln * item.quantity).toFixed(2)} PLN (≈ ${itemCzk.toFixed(0)} Kč)\n`;
+        text += `    Cena: ${formatNum2(item.deal.promoPricePln * item.quantity)} zł (≈ ${itemCzk.toFixed(0)} Kč)\n`;
         if (item.deal.trickType !== 'clean') {
           text += `    ⚠️ PODMÍNKA: ${item.deal.trickTitle}\n`;
         }
@@ -88,13 +92,13 @@ export const ShoppingListDrawer: React.FC<ShoppingListDrawerProps> = ({
     if (customItems.length > 0) {
       text += `--- VLASTNÍ POLOŽKY ---\n`;
       customItems.forEach((ci) => {
-        text += `[ ] ${ci.quantity}x ${ci.title} (~${ci.estimatedPricePln.toFixed(2)} PLN)\n`;
+        text += `[ ] ${ci.quantity}x ${ci.title} (~${formatNum2(ci.estimatedPricePln)} zł)\n`;
       });
       text += `\n`;
     }
 
     text += `-------------------------\n`;
-    text += `CELKEM: ${totalPln.toFixed(2)} PLN (cca ${Math.round(totalCzk)} Kč)\n`;
+    text += `CELKEM: ${formatNum2(totalPln)} zł (cca ${Math.round(totalCzk)} Kč)\n`;
     if (totalSavedCzk > 0) {
       text += `ODHADOVANÁ ÚSPORA OPROTI ČR: ${Math.round(totalSavedCzk)} Kč (-${totalSavedPct} %)\n\n`;
     }
@@ -110,9 +114,24 @@ export const ShoppingListDrawer: React.FC<ShoppingListDrawerProps> = ({
       });
     }
 
-    navigator.clipboard.writeText(text);
-    setCopiedSuccess(true);
-    setTimeout(() => setCopiedSuccess(false), 2500);
+    return text;
+  };
+
+  const handleCopyShoppingList = async () => {
+    const text = buildShoppingListText();
+    if (await copyText(text)) {
+      setManualCopyText(null);
+      setCopiedSuccess(true);
+      setTimeout(() => setCopiedSuccess(false), 2500);
+    } else {
+      // Browser refused: show the text selected so the user can copy it by hand.
+      setManualCopyText(text);
+      setTimeout(() => manualRef.current?.select(), 50);
+    }
+  };
+
+  const handleShare = async () => {
+    if (!(await nativeShare(buildShoppingListText(), 'Nákupní seznam – Lovec slev'))) await handleCopyShoppingList();
   };
 
   return (
@@ -358,13 +377,34 @@ export const ShoppingListDrawer: React.FC<ShoppingListDrawerProps> = ({
           </div>
         </div>
 
+        {/* Manual copy fallback when the browser blocks the clipboard */}
+        {manualCopyText && (
+          <div className="px-5 pt-4 border-t border-slate-200 dark:border-slate-800 bg-amber-50 dark:bg-amber-950/30">
+            <div className="flex items-center justify-between gap-2 mb-2">
+              <span className="text-xs font-semibold text-amber-800 dark:text-amber-300">
+                Prohlížeč nepovolil automatické kopírování – text je označený, zkopírujte ho (Ctrl+C / podržet prst).
+              </span>
+              <button onClick={() => setManualCopyText(null)} className="text-slate-500 hover:text-slate-800" title="Zavřít">
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+            <textarea
+              ref={manualRef}
+              readOnly
+              value={manualCopyText}
+              onFocus={(e) => e.currentTarget.select()}
+              className="w-full h-40 mb-4 p-2 text-xs font-mono rounded-lg border border-amber-300 dark:border-amber-800 bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-200"
+            />
+          </div>
+        )}
+
         {/* Drawer Footer Actions */}
         <div className="p-5 border-t border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/60 flex flex-col sm:flex-row items-center justify-between gap-3">
           <div className="text-xs text-slate-500 dark:text-slate-400 font-mono text-center sm:text-left">
             Celkem k platbě: <strong className="text-slate-900 dark:text-white text-sm">{totalPln.toFixed(2)} PLN</strong> (≈ {Math.round(totalCzk)} Kč)
           </div>
 
-          <div className="flex items-center gap-2 w-full sm:w-auto">
+          <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto">
             <button
               onClick={handleCopyShoppingList}
               className="flex-1 sm:flex-none flex items-center justify-center gap-2 py-2.5 px-4 rounded-xl bg-slate-900 hover:bg-slate-800 dark:bg-white dark:hover:bg-slate-100 text-white dark:text-slate-900 text-xs font-bold transition-all"
@@ -377,10 +417,38 @@ export const ShoppingListDrawer: React.FC<ShoppingListDrawerProps> = ({
               ) : (
                 <>
                   <Copy className="w-4 h-4" />
-                  <span>Kopírovat pro WhatsApp / SMS</span>
+                  <span>Kopírovat</span>
                 </>
               )}
             </button>
+            <a
+              href={whatsappUrl(buildShoppingListText())}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="flex-1 sm:flex-none flex items-center justify-center gap-2 py-2.5 px-4 rounded-xl bg-emerald-700 hover:bg-emerald-800 text-white text-xs font-bold transition-all"
+              title="Otevře WhatsApp s připraveným seznamem"
+            >
+              <MessageCircle className="w-4 h-4" />
+              <span>WhatsApp</span>
+            </a>
+            <a
+              href={smsUrl(buildShoppingListText())}
+              className="flex-1 sm:flex-none flex items-center justify-center gap-2 py-2.5 px-4 rounded-xl bg-sky-700 hover:bg-sky-800 text-white text-xs font-bold transition-all"
+              title="Otevře SMS s připraveným seznamem (v mobilu)"
+            >
+              <MessageSquare className="w-4 h-4" />
+              <span>SMS</span>
+            </a>
+            {canNativeShare() && (
+              <button
+                onClick={handleShare}
+                className="flex-1 sm:flex-none flex items-center justify-center gap-2 py-2.5 px-4 rounded-xl border border-slate-300 dark:border-slate-600 text-slate-700 dark:text-slate-200 text-xs font-bold transition-all"
+                title="Sdílet přes jinou aplikaci"
+              >
+                <Share2 className="w-4 h-4" />
+                <span>Sdílet</span>
+              </button>
+            )}
           </div>
         </div>
       </div>

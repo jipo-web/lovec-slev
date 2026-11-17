@@ -68,8 +68,16 @@ def cmd_fetch(con, pdfs: bool = False) -> None:
             dbm.set_status(con, lf.id, "fetched")  # images are referenced by URL
 
 
-def _normalize_page(con, lf: Leaflet, page_no: int, raws: list[RawOffer], source: PageSource, rate: float) -> list[Offer]:
-    img = lf.page_image_urls[page_no - 1] if 0 < page_no <= len(lf.page_image_urls) else None
+def _image_cache(lf: Leaflet, url: str) -> Path:
+    """Cache file per image URL (not per page number: stores reorder their page lists)."""
+    import hashlib
+    return CACHE_DIR / lf.store / f"{lf.id.split(':')[1]}-{hashlib.sha1(url.encode()).hexdigest()[:12]}.jpg"
+
+
+def _normalize_page(con, lf: Leaflet, page_no: int, raws: list[RawOffer], source: PageSource, rate: float,
+                    image_url: str | None = None) -> list[Offer]:
+    """`image_url`: the image the model just read (pins the page); otherwise the pinned one is used."""
+    img = image_url or dbm.page_image(con, lf, page_no)
     regions = offer_dates.page_regions(con, lf.id, page_no)
     precise = boxes.page_boxes(con, lf.id, page_no)
     offers, own_texts = [], []
@@ -87,7 +95,8 @@ def _normalize_page(con, lf: Leaflet, page_no: int, raws: list[RawOffer], source
     for o, own_text in zip(offers, own_texts):
         o.valid_from, o.valid_to = offer_dates.offer_validity(own_text, o.bbox, regions,
                                                               lf.valid_from, lf.valid_to, tiles)
-    dbm.save_page(con, lf.id, page_no, source.value, [r.model_dump() for r in raws], needs_review=not offers)
+    dbm.save_page(con, lf.id, page_no, source.value, [r.model_dump() for r in raws], needs_review=not offers,
+                  image_url=img if page_no > 0 else None)
     dbm.replace_offers(con, lf.id, page_no, offers)
     return offers
 
@@ -146,7 +155,8 @@ def cmd_locate(con, limit_pages: int = LOCATE_MAX_PAGES_PER_RUN) -> int:
             break
         lf = leaflets.get(lid) or leaflets.setdefault(lid, dbm.row_to_leaflet(
             con.execute("SELECT * FROM leaflets WHERE id=?", (lid,)).fetchone()))
-        if not (0 < page_no <= len(lf.page_image_urls)) or not lf.page_image_urls[page_no - 1]:
+        url = dbm.page_image(con, lf, page_no)
+        if not url:
             continue
         raws = json.loads(raw_json or "[]")
         products = []
@@ -159,9 +169,9 @@ def cmd_locate(con, limit_pages: int = LOCATE_MAX_PAGES_PER_RUN) -> int:
             products.append({"id": i + 1, "name": d["name"], "price": d.get("price_text"), "hint": hint})
         if not products:
             continue
-        img = CACHE_DIR / lf.store / f"{lf.id.split(':')[1]}-{page_no:03d}.jpg"
+        img = _image_cache(lf, url)
         try:
-            download(lf.page_image_urls[page_no - 1], img)
+            download(url, img)
             found = boxes.locate(img, products)
         except Exception as e:
             print(f"[{lf.store}] locate failed p{page_no}: {e}", file=sys.stderr)
@@ -196,11 +206,12 @@ def cmd_dates(con, limit_pages: int = VISION_MAX_PAGES_PER_RUN) -> int:
             break
         lf = leaflets.get(lid) or leaflets.setdefault(lid, dbm.row_to_leaflet(
             con.execute("SELECT * FROM leaflets WHERE id=?", (lid,)).fetchone()))
-        if not (0 < page_no <= len(lf.page_image_urls)) or not lf.page_image_urls[page_no - 1]:
+        url = dbm.page_image(con, lf, page_no)
+        if not url:
             continue
-        img = CACHE_DIR / lf.store / f"{lf.id.split(':')[1]}-{page_no:03d}.jpg"
+        img = _image_cache(lf, url)
         try:
-            download(lf.page_image_urls[page_no - 1], img)
+            download(url, img)
             regions = extract_dates(img)
         except Exception as e:
             print(f"[{lf.store}] dates failed p{page_no}: {e}", file=sys.stderr)
@@ -217,22 +228,40 @@ def _vision_pages(con, lf: Leaflet, rate: float, budget: int) -> tuple[int, int,
     from .extract import vision
 
     total, used, complete = 0, 0, True
-    for page_no, url in enumerate(lf.page_image_urls, start=1):
-        if not url or dbm.page_done(con, lf.id, page_no):
+    # Pages already read, by stable key: the store may have reordered the list,
+    # inserted ads or re-issued images under new URLs since then.
+    done: dict[str, tuple[int, str]] = {}
+    for pno, url in con.execute("SELECT page_no, image_url FROM pages WHERE leaflet_id=? AND page_no>0", (lf.id,)):
+        key = dbm.page_key(url)
+        if key:
+            done[key] = (pno, url)
+    used_nos = {r[0] for r in con.execute("SELECT page_no FROM pages WHERE leaflet_id=?", (lf.id,))}
+    for idx, url in enumerate(lf.page_image_urls, start=1):
+        if not url:
+            continue
+        key = dbm.page_key(url)
+        if key in done:
+            pno, old_url = done[key]
+            if old_url != url:  # same page re-issued under a new URL – follow it, no new model call
+                con.execute("UPDATE pages SET image_url=? WHERE leaflet_id=? AND page_no=?", (url, lf.id, pno))
             continue
         if budget - used <= 0:
             complete = False
             break
-        png = CACHE_DIR / lf.store / f"{lf.id.split(':')[1]}-{page_no:03d}.jpg"
+        # Keep the list position as page number when free, else append (a page was inserted).
+        page_no = idx if idx not in used_nos else max(used_nos | {len(lf.page_image_urls)}) + 1
+        png = _image_cache(lf, url)
         try:
             download(url, png)
             raws, _ = vision.extract_image(png)
         except Exception as e:
-            print(f"[{lf.store}] vision failed p{page_no}: {e}", file=sys.stderr)
+            print(f"[{lf.store}] vision failed p{idx}: {e}", file=sys.stderr)
             complete = False
             continue
         used += 1
-        total += len(_normalize_page(con, lf, page_no, raws, PageSource.vision, rate))
+        used_nos.add(page_no)
+        done[key] = (page_no, url)
+        total += len(_normalize_page(con, lf, page_no, raws, PageSource.vision, rate, image_url=url))
     return total, used, complete
 
 

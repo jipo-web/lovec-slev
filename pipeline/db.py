@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import re
 import sqlite3
 from contextlib import contextmanager
 from datetime import date
@@ -38,6 +39,7 @@ CREATE TABLE IF NOT EXISTS pages (
   raw_json TEXT,
   extracted_at TEXT,
   needs_review INTEGER NOT NULL DEFAULT 0,
+  image_url TEXT,              -- image the model read (pinned; store lists get reordered)
   PRIMARY KEY (leaflet_id, page_no)
 );
 CREATE TABLE IF NOT EXISTS offers (
@@ -95,6 +97,7 @@ def connect(path: Path = DB_PATH) -> Iterator[sqlite3.Connection]:
     con = sqlite3.connect(path)
     con.row_factory = sqlite3.Row
     con.executescript(SCHEMA)
+    migrate(con)
     try:
         yield con
         con.commit()
@@ -145,12 +148,77 @@ def set_status(con: sqlite3.Connection, leaflet_id: str, status: str, pdf_path: 
 
 
 def save_page(con: sqlite3.Connection, leaflet_id: str, page_no: int, method: str, raw: object,
-              image_path: str | None = None, needs_review: bool = False) -> None:
+              image_path: str | None = None, needs_review: bool = False, image_url: str | None = None) -> None:
+    """Store a page's model output. `image_url` pins the image that was read;
+    when None an already pinned URL is kept."""
     con.execute(
-        "INSERT OR REPLACE INTO pages (leaflet_id, page_no, image_path, method, raw_json, extracted_at, needs_review) "
-        "VALUES (?,?,?,?,?,datetime('now'),?)",
-        (leaflet_id, page_no, image_path, method, json.dumps(raw, ensure_ascii=False), int(needs_review)),
+        "INSERT INTO pages (leaflet_id, page_no, image_path, method, raw_json, extracted_at, needs_review, image_url) "
+        "VALUES (?,?,?,?,?,datetime('now'),?,?) "
+        "ON CONFLICT (leaflet_id, page_no) DO UPDATE SET image_path=excluded.image_path, method=excluded.method, "
+        "raw_json=excluded.raw_json, extracted_at=excluded.extracted_at, needs_review=excluded.needs_review, "
+        "image_url=COALESCE(excluded.image_url, pages.image_url)",
+        (leaflet_id, page_no, image_path, method, json.dumps(raw, ensure_ascii=False), int(needs_review), image_url),
     )
+
+
+def page_key(url: str | None) -> str | None:
+    """Stable identity of a flyer page image across URL changes.
+
+    Stores reorder pages, insert ads and re-issue images under new hashes, so
+    neither the position in the list nor the full URL identifies a page.
+    - Lidl/Kaufland (imgproxy.leaflets.schwarz): the last path segment is the
+      base64 of "s3://leaflets/images/<leaflet>/page-01_<hash>.png" → "page-01"
+    - others: the file name without extension (Biedronka keeps
+      "…PODSTAWA_P30_<hash>.png" stable)
+    """
+    if not url:
+        return None
+    path = url.split("?", 1)[0].rstrip("/")
+    last = path.rsplit("/", 1)[-1]
+    if "leaflets.schwarz" in url:
+        import base64
+        seg = last.rsplit(".", 1)[0]
+        try:
+            decoded = base64.urlsafe_b64decode(seg + "=" * (-len(seg) % 4)).decode("utf-8", "ignore")
+            name = decoded.rsplit("/", 1)[-1]
+            m = re.match(r"(page-\d+)", name)
+            if m:
+                return m.group(1)
+        except Exception:
+            pass
+    return last.rsplit(".", 1)[0]
+
+
+def page_image(con: sqlite3.Connection, lf: "Leaflet", page_no: int) -> str | None:
+    """Image the page's offers were read from (pinned), else the current list entry."""
+    row = con.execute("SELECT image_url FROM pages WHERE leaflet_id=? AND page_no=?", (lf.id, page_no)).fetchone()
+    if row and row[0]:
+        return row[0]
+    return lf.page_image_urls[page_no - 1] if 0 < page_no <= len(lf.page_image_urls) else None
+
+
+_FIXES = Path(__file__).parent / "fixes" / "page_lists_2026-11-17.json"
+
+
+def migrate(con: sqlite3.Connection) -> None:
+    """Idempotent schema/data migrations."""
+    cols = {r[1] for r in con.execute("PRAGMA table_info(pages)")}
+    if "image_url" in cols:
+        return
+    con.execute("ALTER TABLE pages ADD COLUMN image_url TEXT")
+    fixes = json.loads(_FIXES.read_text(encoding="utf-8"))["lists"] if _FIXES.exists() else {}
+    has_boxes = con.execute("SELECT 1 FROM sqlite_master WHERE name='page_boxes'").fetchone() is not None
+    for lid, urls_json in con.execute("SELECT id, page_image_urls FROM leaflets").fetchall():
+        current = json.loads(urls_json or "[]")
+        pinned = fixes.get(lid, current)
+        for (page_no,) in con.execute("SELECT page_no FROM pages WHERE leaflet_id=? AND page_no>0", (lid,)).fetchall():
+            if page_no <= len(pinned):
+                con.execute("UPDATE pages SET image_url=? WHERE leaflet_id=? AND page_no=?",
+                            (pinned[page_no - 1], lid, page_no))
+                # Precise boxes computed on a different (shifted) image are wrong.
+                if has_boxes and lid in fixes and (page_no > len(current) or current[page_no - 1] != pinned[page_no - 1]):
+                    con.execute("DELETE FROM page_boxes WHERE leaflet_id=? AND page_no=?", (lid, page_no))
+    con.commit()
 
 
 def page_done(con: sqlite3.Connection, leaflet_id: str, page_no: int) -> bool:

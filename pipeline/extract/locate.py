@@ -10,6 +10,7 @@ from the main extraction during normalisation.
 from __future__ import annotations
 
 import json
+import re
 import sqlite3
 import time
 from pathlib import Path
@@ -72,10 +73,23 @@ def build_prompt(products: list[dict]) -> str:
     return PROMPT.format(hints=hints, items="\n".join(lines))
 
 
-def parse_answer(content: str, ids: set[int]) -> dict[int, list[float]]:
+_ITEM = re.compile(r'"id"\s*:\s*"?(\d+)"?[^{}\[\]]*?"box_2d"\s*:\s*\[\s*([\d.]+)\s*,\s*([\d.]+)\s*,'
+                   r'\s*([\d.]+)\s*,\s*([\d.]+)\s*\]')
+
+
+def _items(content: str) -> list:
+    """The model's JSON is occasionally malformed (a missing comma, a stray
+    quote). Fall back to pulling the id/box pairs out with a regex."""
     content = content.strip().removeprefix("```json").removesuffix("```").strip()
+    try:
+        return json.loads(content).get("boxes") or []
+    except (json.JSONDecodeError, AttributeError):
+        return [{"id": m.group(1), "box_2d": [float(x) for x in m.groups()[1:]]} for m in _ITEM.finditer(content)]
+
+
+def parse_answer(content: str, ids: set[int]) -> dict[int, list[float]]:
     out: dict[int, list[float]] = {}
-    for it in json.loads(content).get("boxes") or []:
+    for it in _items(content):
         if not isinstance(it, dict):
             continue
         try:

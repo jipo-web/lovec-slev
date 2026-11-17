@@ -6,6 +6,7 @@ a Flash-class model) and can be run over pages that were extracted earlier.
 from __future__ import annotations
 
 import json
+import re
 import time
 from pathlib import Path
 
@@ -53,9 +54,17 @@ def extract_dates(path: Path, *, model: str = VISION_MODEL) -> list[dict]:
     return parse_answer(content)
 
 
+_ITEM = re.compile(r'"valid_text"\s*:\s*"([^"]+)"(?:[^{}]*?"box_2d"\s*:\s*\[\s*([\d.]+)\s*,\s*([\d.]+)\s*,'
+                   r'\s*([\d.]+)\s*,\s*([\d.]+)\s*\])?')
+
+
 def parse_answer(content: str) -> list[dict]:
     content = content.strip().removeprefix("```json").removesuffix("```").strip()
-    items = json.loads(content).get("dates") or []
+    try:
+        items = json.loads(content).get("dates") or []
+    except (json.JSONDecodeError, AttributeError):  # malformed JSON: salvage what is readable
+        items = [{"valid_text": m.group(1), "box_2d": [float(x) for x in m.groups()[1:]] if m.group(2) else None}
+                 for m in _ITEM.finditer(content)]
     out = []
     for it in items:
         if not isinstance(it, dict) or not isinstance(it.get("valid_text"), str) or not it["valid_text"].strip():

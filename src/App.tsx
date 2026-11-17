@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
+import { LogoMark } from './components/Logo';
 import { StoreId, CategoryId, TrickType, DealItem, CartItem, CustomCartItem, SortKey, Verdict } from './types';
 import { DEALS } from './data/deals';
 import { loadOffers, loadLeaflets, offerToDealItem, PipelineLeaflet } from './data/loadData';
@@ -551,8 +552,9 @@ export default function App() {
       {/* Footer */}
       <footer className="mt-16 border-t border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 py-8 text-xs text-slate-500 dark:text-slate-400 transition-colors">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex flex-col sm:flex-row items-center justify-between gap-4">
-          <div>
-            <span className="font-bold text-slate-800 dark:text-white">Lovec slev</span> · Nezávislý srovnávač polských akčních letáků a hlídač chytáků pro české nakupující.
+          <div className="flex items-center gap-2">
+            <LogoMark className="w-5 h-5 shrink-0 text-slate-800 dark:text-white" />
+            <span><span className="font-bold text-slate-800 dark:text-white">Lovec-slev.cz</span> · Nezávislý srovnávač polských akčních letáků a hlídač chytáků pro české nakupující.</span>
           </div>
           <div className="flex items-center gap-4 text-[11px]">
             <span>Sledujeme: Biedronka · Dino · Lidl · Kaufland</span>

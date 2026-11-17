@@ -1,5 +1,5 @@
 {
-  "name": "Polské Letáky & Hlídač Chytáků",
+  "name": "Lovec-slev.cz – slevy z polských obchodů",
   "description": "Přehled akčních letáků polských supermarketů (Biedronka, Lidl, Kaufland, Dino), odhalování slevových chytáků, přepočet PLN na CZK a srovnání úspory vůči ČR.",
   "requestFramePermissions": [],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]

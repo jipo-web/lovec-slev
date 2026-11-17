@@ -1,5 +1,6 @@
 import React from 'react';
 import { ShoppingBag, RefreshCw, Sun, Moon, Info, BookOpen, Tag } from 'lucide-react';
+import { Logo } from './Logo';
 
 interface NavbarProps {
   activeTab: 'deals' | 'flyers' | 'guide';
@@ -43,21 +44,11 @@ export const Navbar: React.FC<NavbarProps> = ({
                 e.preventDefault();
                 onGoHome();
               }}
-              className="flex items-center gap-2.5 text-left group rounded-lg focus:outline-none focus-visible:ring-2 focus-visible:ring-red-500"
-              title="Lovec slev – úvodní stránka"
-              aria-label="Lovec slev – úvodní stránka"
+              className="flex items-center text-left group rounded-lg focus:outline-none focus-visible:ring-2 focus-visible:ring-red-500"
+              title="Lovec-slev.cz – úvodní stránka"
+              aria-label="Lovec-slev.cz – úvodní stránka"
             >
-              <div className="w-9 h-9 rounded-lg bg-red-600 text-white flex items-center justify-center font-black text-lg shadow-sm group-hover:bg-red-700 transition-colors">
-                PL
-              </div>
-              <div>
-                <span className="text-lg font-bold tracking-tight text-slate-900 dark:text-white whitespace-nowrap block leading-tight">
-                  Lovec <span className="text-red-600">slev</span>
-                </span>
-                <span className="text-[11px] font-medium text-slate-500 dark:text-slate-400 block leading-tight">
-                  Hlídač chytáků v polských letácích
-                </span>
-              </div>
+              <Logo />
             </a>
           </div>
 

@@ -7,10 +7,10 @@ import { ImageOff } from 'lucide-react';
  * page image is positioned inside an overflow-hidden box so only the
  * bbox region is visible.
  *
- * The pipeline is supposed to emit [x0, y0, x1, y1] as fractions of the
- * page (0..1), but the vision extractor sometimes returns percentages
- * (0..100) or even pixels for one axis. Normalisation therefore happens
- * after the page image has loaded, when its real size is known.
+ * The pipeline emits [x0, y0, x1, y1] as fractions of the page (0..1).
+ * Older data mixed scales per axis; the same rule as pipeline/normalize.py
+ * (normalize_bbox) is applied here as a fallback: values <= 1 are fractions,
+ * up to 100 percent, above that Gemini's 0..1000 grid.
  */
 
 export type BBox = [number, number, number, number];
@@ -18,19 +18,20 @@ export type BBox = [number, number, number, number];
 /** Pad the box a little so the price tag and label around the tile stay visible. */
 const PAD = 0.015;
 
-function toFraction(v: number, dimensionPx: number): number {
-  if (v <= 1) return v; // fraction
-  if (v <= 100) return v / 100; // percent
-  return v / dimensionPx; // pixels
+function axisDivisor(a: number, b: number): number {
+  const m = Math.max(a, b);
+  return m <= 1 ? 1 : m <= 100 ? 100 : 1000;
 }
 
 /** Returns a padded, clamped bbox in fractions, or null when the box is unusable. */
-export function normalizeBBox(raw: unknown, pageW: number, pageH: number): BBox | null {
+export function normalizeBBox(raw: unknown): BBox | null {
   if (!Array.isArray(raw) || raw.length !== 4) return null;
-  const v = raw.map((n) => (typeof n === 'number' && isFinite(n) ? n : NaN));
+  const v = raw.map((n) => (typeof n === 'number' && isFinite(n) && n >= 0 ? n : NaN));
   if (v.some((n) => isNaN(n))) return null;
-  const xs = [toFraction(v[0], pageW), toFraction(v[2], pageW)];
-  const ys = [toFraction(v[1], pageH), toFraction(v[3], pageH)];
+  const dx = axisDivisor(v[0], v[2]);
+  const dy = axisDivisor(v[1], v[3]);
+  const xs = [Math.min(v[0] / dx, 1), Math.min(v[2] / dx, 1)];
+  const ys = [Math.min(v[1] / dy, 1), Math.min(v[3] / dy, 1)];
   const x0 = Math.max(0, Math.min(...xs) - PAD);
   const y0 = Math.max(0, Math.min(...ys) - PAD);
   const x1 = Math.min(1, Math.max(...xs) + PAD);
@@ -106,7 +107,7 @@ export const FlyerCrop: React.FC<FlyerCropProps> = ({ pageImageUrl, bbox, alt, h
     };
   }, [visible, canTry, page, pageImageUrl]);
 
-  const box = canTry && page ? normalizeBBox(bbox, page.w, page.h) : null;
+  const box = canTry && page ? normalizeBBox(bbox) : null;
 
   // Placeholder: no data, image failed, or box unusable after load.
   if (!canTry || (page && !box)) {

@@ -73,7 +73,8 @@ class Condition(BaseModel):
 class RawOffer(BaseModel):
     """What extraction returns before normalisation. Strings stay as seen."""
 
-    name: str
+    name: str  # Polish, as printed
+    name_cs: Optional[str] = None  # Czech translation from the model, if it gave one
     brand: Optional[str] = None
     quantity_text: Optional[str] = None  # "500 g", "1 l", "3 x 200 g", "za kg"
     price_text: str  # "4,99", "2 za 9,98", "14,99 / kg"
@@ -82,7 +83,7 @@ class RawOffer(BaseModel):
     unit_price_text: Optional[str] = None  # "9,98 zł / kg" as printed
     conditions_text: Optional[str] = None
     category: str = "ostatni"
-    bbox: Optional[list[float]] = None  # [x0, y0, x1, y1] as fraction of page, 0..1
+    bbox: Optional[list[float]] = None  # [x0, y0, x1, y1]; normalize_bbox() turns any scale into 0..1
     ean: Optional[str] = None
 
 
@@ -94,7 +95,7 @@ class Offer(BaseModel):
     store: StoreId
     page_no: int  # 1-based
     product_id: Optional[str] = None
-    name: str
+    name: str  # Czech (falls back to Polish until translated)
     name_pl: str
     brand: Optional[str] = None
     quantity: Optional[float] = None  # 0.5

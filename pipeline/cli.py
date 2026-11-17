@@ -5,6 +5,8 @@
   extract [--vision]  structured + text-layer extraction; --vision also runs the model on
                       Biedronka pages and on PDF pages where the text layer found nothing
   score               product matching + scoring for offers valid today or later
+  renormalize         re-run normalisation on stored model output (free)
+  translate           Czech names for offers that only have the Polish one (cheap text model)
   build               write public/data/*.json
   run [--vision]      all of the above
   verify              one leaflet per store: counts, sample offers, cost estimate
@@ -24,7 +26,7 @@ from .extract import structured, text_layer
 from .http import download
 from .match import assign_product_ids
 from .models import Leaflet, Offer, PageSource, RawOffer
-from .normalize import normalize
+from .normalize import drop_shared_bboxes, normalize
 from .rates import czk_per_pln
 from .score import score_offers
 from .sources import SOURCES
@@ -71,9 +73,39 @@ def _normalize_page(con, lf: Leaflet, page_no: int, raws: list[RawOffer], source
                       valid_to=lf.valid_to, page_image_url=img, source=source, rate_czk_per_pln=rate, idx=i)
         if o:
             offers.append(o)
+    drop_shared_bboxes(offers)
     dbm.save_page(con, lf.id, page_no, source.value, [r.model_dump() for r in raws], needs_review=not offers)
     dbm.replace_offers(con, lf.id, page_no, offers)
     return offers
+
+
+def cmd_renormalize(con) -> int:
+    """Re-run normalisation on the stored model output of all current pages.
+
+    Free (no model calls): improvements in normalize.py reach offers that were
+    extracted before the change. Czech names already translated are kept.
+    """
+    rate = czk_per_pln(con)
+    today = date.today().isoformat()
+    kept = {r["name_pl"]: r["name"] for r in con.execute(
+        "SELECT name_pl, name FROM offers WHERE name != name_pl")}
+    n = 0
+    for row in con.execute("SELECT * FROM leaflets WHERE valid_to>=?", (today,)).fetchall():
+        lf = dbm.row_to_leaflet(row)
+        for p in con.execute("SELECT page_no, method, raw_json FROM pages WHERE leaflet_id=?", (lf.id,)).fetchall():
+            raws = []
+            for d in json.loads(p["raw_json"] or "[]"):
+                try:
+                    raws.append(RawOffer(**d))
+                except Exception:
+                    continue
+            offers = _normalize_page(con, lf, p["page_no"], raws, PageSource(p["method"]), rate)
+            for o in offers:
+                if o.name == o.name_pl and o.name_pl in kept:
+                    o.name = kept[o.name_pl]
+            dbm.replace_offers(con, lf.id, p["page_no"], offers)
+            n += len(offers)
+    return n
 
 
 IMAGE_STORES = ("biedronka", "lidl", "kaufland")  # page images from the store API → vision model
@@ -186,7 +218,8 @@ def cmd_verify(con) -> None:
 
 def main(argv: list[str] | None = None) -> None:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("command", choices=["discover", "fetch", "extract", "score", "build", "run", "verify"])
+    ap.add_argument("command", choices=["discover", "fetch", "extract", "renormalize", "translate", "score",
+                                       "build", "run", "verify"])
     ap.add_argument("--vision", action="store_true", help="use the vision model where needed")
     ap.add_argument("--stores", nargs="*", help="limit discovery to these stores")
     ap.add_argument("--pdf", action="store_true", help="also download Lidl/Kaufland PDFs to the cache")
@@ -203,6 +236,11 @@ def main(argv: list[str] | None = None) -> None:
             cmd_fetch(con, a.pdf)
         if a.command in ("extract", "run"):
             cmd_extract(con, a.vision, a.max_pages, a.text_layer)
+        if a.command in ("renormalize", "run"):
+            print(f"renormalized {cmd_renormalize(con)} offers")
+        if a.command in ("translate", "run"):
+            from .translate import translate_names
+            print(f"translated {translate_names(con)} names")
         if a.command in ("score", "run"):
             print(f"scored {cmd_score(con)} offers")
         if a.command in ("build", "run"):

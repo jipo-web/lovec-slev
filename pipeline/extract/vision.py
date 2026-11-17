@@ -21,6 +21,7 @@ PROMPT = """Jesteś asystentem do odczytu gazetek promocyjnych polskich sklepów
 Na obrazie jest jedna strona gazetki. Wypisz WSZYSTKIE produkty z ceną promocyjną.
 Zwróć wyłącznie JSON: {"offers": [ ... ]} gdzie każdy element ma pola:
 - name: nazwa produktu po polsku, bez marki jeśli jest w polu brand
+- name_cs: ta sama nazwa przetłumaczona na język czeski (krótko, naturalnie, np. "Mléko UHT 3,2 %", "Kuřecí stehna"), markę zostaw bez zmian
 - brand: marka lub null
 - quantity_text: gramatura/objętość/ilość tak jak wydrukowano ("500 g", "1 l", "3 x 200 g", "za kg") lub null
 - price_text: cena w złotych, jaką klient płaci za 1 sztukę (lub za kg) w tej promocji, jak wydrukowano ("4,99", "14,99/kg"). NIGDY nie wpisuj tu procentu ani ceny "drugiego" produktu. Dla mechanik typu "drugi tańszy produkt X% taniej", "drugi za Y zł", "1+1 gratis", "2+1", "przy zakupie 2" wpisz do price_text cenę regularną 1 sztuki wydrukowaną przy produkcie, a mechanikę do conditions_text. Jeśli przy produkcie nie ma żadnej ceny w złotych, wpisz null.
@@ -29,7 +30,7 @@ Zwróć wyłącznie JSON: {"offers": [ ... ]} gdzie każdy element ma pola:
 - unit_price_text: cena za jednostkę jak wydrukowano (np. "9,98 zł/kg") lub null
 - conditions_text: warunki promocji (aplikacja, karta, "przy zakupie 2", limit, "drugi -50%") lub null
 - category: jedna z: {CATS}
-- bbox: [x0, y0, x1, y1] – położenie kafelka produktu jako ułamki szerokości/wysokości strony (0–1)
+- box_2d: [ymin, xmin, ymax, xmax] – prostokąt obejmujący CAŁY kafelek tego produktu (zdjęcie, nazwę i cenę), liczby całkowite w skali 0–1000 względem wysokości/szerokości strony. Każdy produkt ma własny prostokąt – nie powtarzaj prostokąta innego produktu.
 Promocje na całą grupę ("wszystkie kawy", "wszystkie kosmetyki do włosów") wypisz jako jeden element z name = nazwa grupy i price_text = null, chyba że jest wydrukowana cena.
 Pomiń reklamy bez ceny i teksty ogólne. Nie wymyślaj cen – jeśli cena jest nieczytelna, pomiń produkt.
 """.replace("{CATS}", ", ".join(CATEGORIES))
@@ -82,10 +83,25 @@ def extract_image(path: Path, *, model: str = VISION_MODEL) -> tuple[list[RawOff
             if not o.get("name"):
                 continue
             o["price_text"] = o.get("price_text") or ""  # "" = group promo without a printed price
+            o["bbox"] = box_2d_to_bbox(o.get("box_2d")) or o.get("bbox")
             offers.append(RawOffer(**{k: o.get(k) for k in RawOffer.model_fields if k in o}))
         except Exception:
             continue
     return offers, data
+
+
+def box_2d_to_bbox(box) -> list[float] | None:
+    """Gemini's native [ymin, xmin, ymax, xmax] on a 0..1000 grid → [x0, y0, x1, y1] in 0..1."""
+    if not isinstance(box, (list, tuple)) or len(box) != 4:
+        return None
+    try:
+        ymin, xmin, ymax, xmax = (float(x) for x in box)
+    except (TypeError, ValueError):
+        return None
+    vals = [xmin, ymin, xmax, ymax]
+    if not all(0 <= x <= 1000 for x in vals):
+        return None
+    return [round(x / 1000, 4) for x in vals]
 
 
 def render_pdf_page(pdf_path: Path, page_no: int, out: Path, dpi: int = 150) -> Path:

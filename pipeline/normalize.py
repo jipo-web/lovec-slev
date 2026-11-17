@@ -452,7 +452,7 @@ def normalize(raw: RawOffer, *, leaflet_id: str, store: str, page_no: int,
 
     return Offer(
         id=f"{leaflet_id}:p{page_no}:{idx}", leaflet_id=leaflet_id, store=store,  # type: ignore[arg-type]
-        page_no=page_no, name=_clean_name(raw.name_cs) or name, name_pl=name, brand=raw.brand,
+        page_no=page_no, name=_clean_name(raw.name_cs) or name, name_pl=name, brand=raw.brand,  # name_cs only if a model still sends it
         quantity=qty, unit=unit, quantity_text=qtext,
         price_pln=price, old_price_pln=old if old and old > price else None,
         discount_pct=disc, unit_price_pln=up, unit_price_unit=up_unit,

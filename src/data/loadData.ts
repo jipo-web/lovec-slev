@@ -118,7 +118,8 @@ export function offerToDealItem(o: PipelineOffer, _rate: number): DealItem {
   return {
     id: o.id,
     store: o.store,
-    title: o.name || o.name_pl,
+    // Original Polish names: shoppers in Poland read them on the shelf.
+    title: o.name_pl || o.name,
     polishTitle: o.name_pl || o.name,
     category: CATEGORY_MAP[o.category] ?? 'trvanlive',
     promoPricePln: o.price_pln,

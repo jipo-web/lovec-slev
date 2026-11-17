@@ -1,5 +1,8 @@
 """Czech product names for offers that only carry the Polish one.
 
+Not part of `run` since 17 Nov 2026: the web shows the original Polish names
+(shoppers read them on the shelf). Kept as `python -m pipeline translate`.
+
 New pages get `name_cs` straight from the vision model. Everything older (and
 structured sources such as Dino) is translated here with one cheap text call
 per batch of names. Results are cached in the `translations` table, so each

@@ -6,7 +6,7 @@
                       Biedronka pages and on PDF pages where the text layer found nothing
   score               product matching + scoring for offers valid today or later
   renormalize         re-run normalisation on stored model output (free)
-  translate           Czech names for offers that only have the Polish one (cheap text model)
+  translate           optional: Czech names (cheap text model); not part of run, the web shows Polish names
   build               write public/data/*.json
   run [--vision]      all of the above
   verify              one leaflet per store: counts, sample offers, cost estimate
@@ -238,7 +238,7 @@ def main(argv: list[str] | None = None) -> None:
             cmd_extract(con, a.vision, a.max_pages, a.text_layer)
         if a.command in ("renormalize", "run"):
             print(f"renormalized {cmd_renormalize(con)} offers")
-        if a.command in ("translate", "run"):
+        if a.command == "translate":  # optional; the web shows the original Polish names
             from .translate import translate_names
             print(f"translated {translate_names(con)} names")
         if a.command in ("score", "run"):

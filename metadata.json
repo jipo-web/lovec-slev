@@ -1,6 +1,6 @@
 {
   "name": "Polské Letáky & Hlídač Chytáků",
-  "description": "Přehled akčních letáků polských supermarketů (Biedronka, Lidl, Kaufland, Carrefour, Dino), odhalování slevových chytáků, přepočet PLN na CZK a srovnání úspory vůči ČR.",
+  "description": "Přehled akčních letáků polských supermarketů (Biedronka, Lidl, Kaufland, Dino), odhalování slevových chytáků, přepočet PLN na CZK a srovnání úspory vůči ČR.",
   "requestFramePermissions": [],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }

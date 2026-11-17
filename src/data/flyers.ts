@@ -166,41 +166,4 @@ export const STORE_FLYERS: Record<StoreId, StoreFlyer> = {
       },
     ],
   },
-  carrefour: {
-    storeId: 'carrefour',
-    flyerTitle: 'Tani Koszyk Carrefour Polska',
-    edition: 'Katalog oszczędności Hipermarket & Supermarket',
-    validityRange: 'Platnost: Úterý 27.10. – Pondělí 03.11.',
-    sourceUrl: 'https://www.carrefour.pl/gazetki',
-    pages: [
-      {
-        pageNumber: 1,
-        title: 'Ranní káva: Jacobs Krönung 200g',
-        theme: 'Instantní káva ve slevě',
-        bannerNote: '🔴 OJEBOMETER CHYTÁK: Sleva se vrací jako e-bon do aplikace Mój Carrefour pro další nákup!',
-        dealIds: ['car-1'],
-      },
-      {
-        pageNumber: 2,
-        title: 'Rybí trh & Čerstvý losos',
-        theme: 'Čerstvý atlantický losos bez kůže',
-        bannerNote: '🟢 Čistá sleva na váženého lososa – o více než 40 % levnější než v ČR.',
-        dealIds: ['car-2'],
-      },
-      {
-        pageNumber: 3,
-        title: 'Rodinná snídaně & Nutella',
-        theme: 'Sladká pomazánka Nutella 600g',
-        bannerNote: 'Výborná cena bez jakýchkoliv podmínek.',
-        dealIds: ['car-3'],
-      },
-      {
-        pageNumber: 4,
-        title: 'Drogerie & Papírový program',
-        theme: 'Toaletní papír Foxy Mega 4 role',
-        bannerNote: 'Kvalitní třívrstvý papír v rodinném návinu.',
-        dealIds: ['car-4'],
-      },
-    ],
-  },
 };

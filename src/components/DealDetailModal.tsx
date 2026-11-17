@@ -1,7 +1,9 @@
 import React from 'react';
 import { DealItem } from '../types';
 import { STORES } from '../data/stores';
-import { X, ShieldCheck, AlertTriangle, AlertCircle, ShoppingBag, Calendar, Store, Tag, Plus, Check } from 'lucide-react';
+import { FlyerCrop, hasCropData } from './FlyerCrop';
+import { formatCzk, formatNum2, discountPct, MIN_VISIBLE_DISCOUNT_PCT } from '../utils/format';
+import { X, ShieldCheck, AlertTriangle, AlertCircle, ShoppingBag, Calendar, Store, Check, BookOpen } from 'lucide-react';
 
 interface DealDetailModalProps {
   deal: DealItem | null;
@@ -10,6 +12,7 @@ interface DealDetailModalProps {
   onClose: () => void;
   onAddToCart: (deal: DealItem) => void;
   isInCart: boolean;
+  onOpenFlyerPage?: (deal: DealItem) => void;
 }
 
 export const DealDetailModal: React.FC<DealDetailModalProps> = ({
@@ -19,6 +22,7 @@ export const DealDetailModal: React.FC<DealDetailModalProps> = ({
   onClose,
   onAddToCart,
   isInCart,
+  onOpenFlyerPage,
 }) => {
   if (!isOpen || !deal) return null;
 
@@ -28,10 +32,14 @@ export const DealDetailModal: React.FC<DealDetailModalProps> = ({
   const hasCzPrice = deal.czechEquivalentCzk > 0;
   const savingsVsCzCzk = hasCzPrice ? Math.max(0, deal.czechEquivalentCzk - promoCzk) : 0;
   const savingsVsCzPct = hasCzPrice ? Math.round((savingsVsCzCzk / deal.czechEquivalentCzk) * 100) : 0;
+  const pct = discountPct(deal.promoPricePln, deal.regularPricePln);
+  const showDiscount = pct != null && pct >= MIN_VISIBLE_DISCOUNT_PCT;
+  const showPolishTitle = deal.polishTitle.trim().toLowerCase() !== deal.title.trim().toLowerCase();
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs">
-      <div 
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs" onClick={onClose}>
+      <div
+        onClick={(e) => e.stopPropagation()}
         className="bg-white dark:bg-slate-900 w-full max-w-lg rounded-3xl border border-slate-200 dark:border-slate-800 shadow-2xl overflow-hidden flex flex-col max-h-[90vh] animate-in fade-in zoom-in-95 duration-150"
         role="dialog"
         aria-modal="true"
@@ -41,15 +49,25 @@ export const DealDetailModal: React.FC<DealDetailModalProps> = ({
           <div className="flex items-center gap-2.5">
             <span
               className="text-xs font-bold px-2.5 py-1 rounded-md tracking-wider uppercase font-mono text-white"
-              style={{
-                backgroundColor: deal.store === 'dino' ? '#b91c1c' : deal.store === 'biedronka' ? '#e10600' : deal.store === 'lidl' ? '#0050aa' : deal.store === 'kaufland' ? '#dc2626' : '#0284c7',
-              }}
+              style={{ backgroundColor: store.brandColor }}
             >
               {store.name}
             </span>
-            <span className="text-xs font-medium text-slate-500 dark:text-slate-400">
-              {deal.flyerName} · Strana {deal.flyerPage}
-            </span>
+            {onOpenFlyerPage ? (
+              <button
+                onClick={() => {
+                  onClose();
+                  onOpenFlyerPage(deal);
+                }}
+                className="text-xs font-medium text-slate-500 dark:text-slate-400 hover:text-red-600 dark:hover:text-red-400 flex items-center gap-1 underline decoration-dotted underline-offset-2"
+                title="Zobrazit tuto stranu letáku"
+              >
+                <BookOpen className="w-3.5 h-3.5" />
+                <span>Strana {deal.flyerPage} letáku</span>
+              </button>
+            ) : (
+              <span className="text-xs font-medium text-slate-500 dark:text-slate-400">Strana {deal.flyerPage} letáku</span>
+            )}
           </div>
 
           <button
@@ -63,17 +81,34 @@ export const DealDetailModal: React.FC<DealDetailModalProps> = ({
 
         {/* Content */}
         <div className="p-6 overflow-y-auto space-y-6 text-sm">
+          {/* Flyer crop */}
+          {hasCropData(deal.pageImageUrl, deal.bbox) && (
+            <div className="rounded-2xl overflow-hidden border border-slate-200 dark:border-slate-700">
+              <FlyerCrop pageImageUrl={deal.pageImageUrl} bbox={deal.bbox} alt={deal.title} heightClass="h-72" />
+            </div>
+          )}
+
           {/* Titles */}
           <div>
-            <div className="text-xs font-mono font-medium text-slate-400 uppercase tracking-wider mb-1">
-              Polský originální název: {deal.polishTitle}
-            </div>
+            {showPolishTitle && (
+              <div className="text-xs font-mono font-medium text-slate-400 uppercase tracking-wider mb-1">
+                Polský název: {deal.polishTitle}
+              </div>
+            )}
             <h2 className="text-xl font-bold text-slate-900 dark:text-white leading-tight">
               {deal.title}
             </h2>
-            <div className="mt-1 text-xs text-slate-500 dark:text-slate-400 font-mono">
-              Balení: {deal.packageSize} ({deal.unit})
+            <div className="mt-1 flex flex-wrap gap-x-3 text-xs text-slate-500 dark:text-slate-400 font-mono">
+              {deal.packageSize && <span>Balení: {deal.packageSize}</span>}
+              {deal.unitPricePln != null && deal.unitPriceUnit && (
+                <span>{formatNum2(deal.unitPricePln)} zł/{deal.unitPriceUnit}</span>
+              )}
             </div>
+            {deal.reason && (
+              <p className="mt-2 text-xs text-slate-600 dark:text-slate-300 leading-relaxed">
+                Hodnocení: {deal.reason}
+              </p>
+            )}
           </div>
 
           {/* Ojebometer Verdict Card */}
@@ -119,14 +154,16 @@ export const DealDetailModal: React.FC<DealDetailModalProps> = ({
                 Polská akční cena
               </span>
               <div className="text-2xl font-black text-slate-900 dark:text-white font-mono tabular-nums">
-                {deal.promoPricePln.toFixed(2)} PLN
+                {formatNum2(deal.promoPricePln)} zł
               </div>
               <div className="text-xs font-bold text-red-600 dark:text-red-400 font-mono mt-0.5">
-                ≈ {promoCzk.toFixed(1)} Kč
+                ≈ {formatCzk(promoCzk)}
               </div>
-              <div className="text-[11px] text-slate-400 font-mono mt-1">
-                Běžná cena: {deal.regularPricePln.toFixed(2)} PLN ({regularCzk.toFixed(1)} Kč)
-              </div>
+              {showDiscount && (
+                <div className="text-[11px] text-slate-400 font-mono mt-1">
+                  Běžná cena: {formatNum2(deal.regularPricePln)} zł ({formatCzk(regularCzk)}) · sleva {Math.round(pct!)} %
+                </div>
+              )}
             </div>
 
             {hasCzPrice && (
@@ -135,10 +172,10 @@ export const DealDetailModal: React.FC<DealDetailModalProps> = ({
                 Srovnání s běžnou cenou v ČR
               </span>
               <div className="text-xl font-black text-slate-800 dark:text-slate-100 font-mono tabular-nums">
-                ~{deal.czechEquivalentCzk.toFixed(0)} Kč
+                ~{formatCzk(deal.czechEquivalentCzk)}
               </div>
               <div className="text-xs font-bold text-emerald-600 dark:text-emerald-400 font-mono mt-0.5">
-                Úspora: {Math.round(savingsVsCzCzk)} Kč (-{savingsVsCzPct} %)
+                Úspora: {formatCzk(savingsVsCzCzk)} (-{savingsVsCzPct} %)
               </div>
               <div className="text-[11px] text-emerald-700/80 dark:text-emerald-400/80 font-mono mt-1">
                 na 1 balení / měrnou jednotku
@@ -176,7 +213,7 @@ export const DealDetailModal: React.FC<DealDetailModalProps> = ({
             onClick={() => {
               onAddToCart(deal);
             }}
-            className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-red-600 hover:bg-red-700 text-white text-xs font-bold shadow-sm transition-all"
+            className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-emerald-700 hover:bg-emerald-800 text-white text-xs font-bold shadow-sm transition-all"
           >
             {isInCart ? (
               <>

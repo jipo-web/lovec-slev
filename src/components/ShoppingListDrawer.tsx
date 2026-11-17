@@ -69,7 +69,7 @@ export const ShoppingListDrawer: React.FC<ShoppingListDrawerProps> = ({
   };
 
   const handleCopyShoppingList = () => {
-    let text = `🛒 NÁKUPNÍ SEZNAM DO POLSKA (LovciSlev PL)\n`;
+    let text = `🛒 NÁKUPNÍ SEZNAM DO POLSKA (lovec-slev.cz)\n`;
     text += `Kurz: 1 PLN = ${exchangeRate.toFixed(2)} Kč\n\n`;
 
     if (cart.length > 0) {

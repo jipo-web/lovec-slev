@@ -4,6 +4,8 @@ import { ShoppingBag, RefreshCw, Sun, Moon, Info, BookOpen, Tag } from 'lucide-r
 interface NavbarProps {
   activeTab: 'deals' | 'flyers' | 'guide';
   setActiveTab: (tab: 'deals' | 'flyers' | 'guide') => void;
+  /** Back to the homepage: deals tab, filters reset, scrolled to top. */
+  onGoHome: () => void;
   exchangeRate: number;
   setExchangeRate: (rate: number) => void;
   cartCount: number;
@@ -17,6 +19,7 @@ interface NavbarProps {
 export const Navbar: React.FC<NavbarProps> = ({
   activeTab,
   setActiveTab,
+  onGoHome,
   exchangeRate,
   setExchangeRate,
   cartCount,
@@ -32,9 +35,17 @@ export const Navbar: React.FC<NavbarProps> = ({
         <div className="flex items-center justify-between gap-8 h-16">
           {/* Zone 1: Wordmark */}
           <div className="flex items-center gap-3 shrink-0">
-            <button
-              onClick={() => setActiveTab('deals')}
-              className="flex items-center gap-2.5 text-left group focus:outline-none"
+            <a
+              href={import.meta.env.BASE_URL}
+              onClick={(e) => {
+                // Let Ctrl/Cmd/middle click open a new tab; plain click stays in the app.
+                if (e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+                e.preventDefault();
+                onGoHome();
+              }}
+              className="flex items-center gap-2.5 text-left group rounded-lg focus:outline-none focus-visible:ring-2 focus-visible:ring-red-500"
+              title="Lovec slev – úvodní stránka"
+              aria-label="Lovec slev – úvodní stránka"
             >
               <div className="w-9 h-9 rounded-lg bg-red-600 text-white flex items-center justify-center font-black text-lg shadow-sm group-hover:bg-red-700 transition-colors">
                 PL
@@ -47,7 +58,7 @@ export const Navbar: React.FC<NavbarProps> = ({
                   Hlídač chytáků v polských letácích
                 </span>
               </div>
-            </button>
+            </a>
           </div>
 
           {/* Zone 2: Clean nav links */}

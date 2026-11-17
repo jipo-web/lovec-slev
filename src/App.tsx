@@ -49,6 +49,22 @@ export default function App() {
   const [activeTrickModalDeal, setActiveTrickModalDeal] = useState<DealItem | null>(null);
   const [flyerPageView, setFlyerPageView] = useState<{ leaflet: PipelineLeaflet; page: number } | null>(null);
 
+  // Logo click: back to the default homepage state
+  const handleGoHome = () => {
+    setActiveTab('deals');
+    setSelectedStore('all');
+    setSelectedCategory('all');
+    setSelectedTrickType('all');
+    setSelectedVerdict('all');
+    setSearchQuery('');
+    setSortBy('savings_pct');
+    setSelectedDay(toIsoDay(new Date()));
+    setActiveTrickModalDeal(null);
+    setFlyerPageView(null);
+    setIsCartOpen(false);
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
   // Open the flyer page a deal comes from (from the deal card header)
   const handleOpenFlyerPage = (deal: DealItem) => {
     const leaflet = leaflets?.find((lf) => lf.id === deal.leafletId);
@@ -346,6 +362,7 @@ export default function App() {
       <Navbar
         activeTab={activeTab}
         setActiveTab={setActiveTab}
+        onGoHome={handleGoHome}
         exchangeRate={exchangeRate}
         setExchangeRate={handleSetExchangeRate}
         cartCount={totalCartCount}

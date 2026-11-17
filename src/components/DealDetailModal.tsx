@@ -2,7 +2,7 @@ import React from 'react';
 import { DealItem } from '../types';
 import { STORES } from '../data/stores';
 import { FlyerCrop, hasCropData } from './FlyerCrop';
-import { formatCzk, formatNum2, discountPct, MIN_VISIBLE_DISCOUNT_PCT } from '../utils/format';
+import { formatCzk, formatNum2, discountPct, MIN_VISIBLE_DISCOUNT_PCT, validityInfo } from '../utils/format';
 import { X, ShieldCheck, AlertTriangle, AlertCircle, ShoppingBag, Calendar, Store, Check, BookOpen } from 'lucide-react';
 
 interface DealDetailModalProps {
@@ -195,7 +195,7 @@ export const DealDetailModal: React.FC<DealDetailModalProps> = ({
             </p>
             <div className="pt-1 flex items-center gap-2 text-slate-500 dark:text-slate-400 font-mono text-[11px]">
               <Calendar className="w-3.5 h-3.5" />
-              <span>Platnost akce: do {new Date(deal.validUntil).toLocaleDateString('cs-CZ')}</span>
+              <span>Platnost akce: {validityInfo(deal.validFrom, deal.validUntil).label}</span>
             </div>
           </div>
         </div>

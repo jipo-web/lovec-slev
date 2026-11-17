@@ -2,8 +2,8 @@ import React from 'react';
 import { DealItem, Verdict } from '../types';
 import { STORES } from '../data/stores';
 import { FlyerCrop } from './FlyerCrop';
-import { formatCzk, formatNum2, discountPct, MIN_VISIBLE_DISCOUNT_PCT } from '../utils/format';
-import { Plus, Minus, ShieldCheck, AlertTriangle, AlertCircle, BookOpen, Flame } from 'lucide-react';
+import { formatCzk, formatNum2, discountPct, MIN_VISIBLE_DISCOUNT_PCT, validityInfo } from '../utils/format';
+import { Plus, Minus, ShieldCheck, AlertTriangle, AlertCircle, BookOpen, Flame, CalendarClock } from 'lucide-react';
 
 const VERDICT_STYLES: Record<Verdict, { label: string; cls: string }> = {
   trhak: {
@@ -45,6 +45,8 @@ interface DealCardProps {
   onOpenFlyerPage?: (deal: DealItem) => void;
   /** Rank 1..n when the card is part of the "top deals" strip. */
   topRank?: number;
+  /** Day the user is browsing (ISO); used for "končí dnes". */
+  selectedDay?: string;
 }
 
 export const DealCard: React.FC<DealCardProps> = ({
@@ -56,6 +58,7 @@ export const DealCard: React.FC<DealCardProps> = ({
   onOpenTrickModal,
   onOpenFlyerPage,
   topRank,
+  selectedDay,
 }) => {
   const store = STORES[deal.store];
   const promoCzk = deal.promoPricePln * exchangeRate;
@@ -71,6 +74,7 @@ export const DealCard: React.FC<DealCardProps> = ({
     deal.polishTitle && deal.polishTitle.trim().toLowerCase() !== deal.title.trim().toLowerCase();
 
   const conditions = conditionSummary(deal);
+  const validity = validityInfo(deal.validFrom, deal.validUntil, selectedDay);
   const conditionStyle =
     deal.trickType === 'clean'
       ? {
@@ -207,10 +211,26 @@ export const DealCard: React.FC<DealCardProps> = ({
           )}
         </div>
 
+        {/* Validity of this particular offer (can be shorter than the leaflet) */}
+        <div
+          className={`mt-2 flex items-center gap-1.5 text-[11px] ${
+            validity.highlight
+              ? 'text-amber-800 dark:text-amber-300 font-semibold'
+              : 'text-slate-500 dark:text-slate-400'
+          }`}
+          title="Platnost této akce"
+        >
+          <CalendarClock className="w-3.5 h-3.5 shrink-0" />
+          <span className="truncate">
+            {validity.label}
+            {validity.urgency && <span className="ml-1.5 px-1.5 py-0.5 rounded bg-amber-100 dark:bg-amber-950/50">{validity.urgency}</span>}
+          </span>
+        </div>
+
         {/* Conditions – one line, details in the modal */}
         <button
           onClick={() => onOpenTrickModal(deal)}
-          className={`mt-2.5 w-full flex items-center gap-1.5 text-[11px] font-medium text-left ${conditionStyle.cls} hover:underline decoration-dotted underline-offset-2`}
+          className={`mt-1.5 w-full flex items-center gap-1.5 text-[11px] font-medium text-left ${conditionStyle.cls} hover:underline decoration-dotted underline-offset-2`}
           title="Zobrazit celé podmínky akce"
         >
           {conditionStyle.icon}

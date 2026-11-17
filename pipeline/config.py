@@ -33,6 +33,7 @@ VISION_API_KEY = os.environ.get("VISION_API_KEY") or os.environ.get("OPENROUTER_
 VISION_MODEL = os.environ.get("VISION_MODEL", "google/gemini-2.5-flash")
 VISION_MAX_WIDTH = 1200  # px; page images are downscaled before upload
 VISION_MAX_PAGES_PER_RUN = int(os.environ.get("VISION_MAX_PAGES_PER_RUN", "300"))
+LOCATE_MAX_PAGES_PER_RUN = int(os.environ.get("LOCATE_MAX_PAGES_PER_RUN", "400"))
 
 # Scoring
 HISTORY_WEEKS = 8

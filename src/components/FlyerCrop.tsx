@@ -43,6 +43,25 @@ export function normalizeBBox(raw: unknown): BBox | null {
   return [x0, y0, x1, y1];
 }
 
+const MIN_ASPECT = 0.65; // narrower crops become slivers in the card
+const MAX_ASPECT = 2.2; // flatter ones show just a price strip
+
+/** Grow a box around its centre (within the page) so its aspect ratio stays readable. */
+function widenToAspect(b: BBox, pageW: number, pageH: number): BBox {
+  let [x0, y0, x1, y1] = b;
+  const aspect = ((x1 - x0) * pageW) / ((y1 - y0) * pageH);
+  const grow = (lo: number, hi: number, size: number): [number, number] => {
+    const c = (lo + hi) / 2;
+    let a = Math.max(0, c - size / 2);
+    let z = Math.min(1, a + size);
+    a = Math.max(0, z - size);
+    return [a, z];
+  };
+  if (aspect < MIN_ASPECT) [x0, x1] = grow(x0, x1, Math.min(1, ((y1 - y0) * pageH * MIN_ASPECT) / pageW));
+  else if (aspect > MAX_ASPECT) [y0, y1] = grow(y0, y1, Math.min(1, ((x1 - x0) * pageW) / MAX_ASPECT / pageH));
+  return [x0, y0, x1, y1];
+}
+
 /** True when the offer carries enough data to even attempt a crop. */
 export function hasCropData(pageImageUrl?: string | null, bbox?: unknown): boolean {
   return !!pageImageUrl && Array.isArray(bbox) && bbox.length === 4;
@@ -126,7 +145,7 @@ export const FlyerCrop: React.FC<FlyerCropProps> = ({ pageImageUrl, bbox, alt, h
     return <div ref={ref} className={`${heightClass} w-full bg-slate-100 dark:bg-slate-800 animate-pulse ${className}`} />;
   }
 
-  const [x0, y0, x1, y1] = box;
+  const [x0, y0, x1, y1] = widenToAspect(box, page!.w, page!.h);
   const w = x1 - x0;
   const h = y1 - y0;
   const aspect = (w * page!.w) / (h * page!.h);

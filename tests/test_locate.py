@@ -44,3 +44,16 @@ def test_precise_box_overrides_extraction_box(tmp_path):
     offers = cli._normalize_page(con, lf, 1, raws, PageSource.vision, 5.5)
     assert offers[0].bbox == [0.05, 0.6, 0.6, 0.98]
     assert offers[1].bbox == [0.05, 0.15, 0.3, 0.42]
+
+
+def test_parse_answer_salvages_malformed_json():
+    broken = '{"boxes": [{"id": 1, "box_2d": [550, 40, 950, 520]} {"id": 2 "box_2d": [100, 500, 480, 990]}, {"id": 3, '
+    assert locate.parse_answer(broken, {1, 2, 3}) == {1: [0.04, 0.55, 0.52, 0.95], 2: [0.5, 0.1, 0.99, 0.48]}
+
+
+def test_dates_salvage_malformed_json():
+    from pipeline.extract.page_dates import parse_answer
+    broken = '{"dates": [{"valid_text": "CZWARTEK – SOBOTA 12.11-14.11", "box_2d": [550, 0, 1000, 1000]} {"valid_text": "OD 16.11"'
+    assert parse_answer(broken) == [
+        {"valid_text": "CZWARTEK – SOBOTA 12.11-14.11", "bbox": [0.0, 0.55, 1.0, 1.0]},
+        {"valid_text": "OD 16.11", "bbox": None}]

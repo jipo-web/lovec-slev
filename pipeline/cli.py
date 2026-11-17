@@ -70,16 +70,18 @@ def cmd_fetch(con, pdfs: bool = False) -> None:
 def _normalize_page(con, lf: Leaflet, page_no: int, raws: list[RawOffer], source: PageSource, rate: float) -> list[Offer]:
     img = lf.page_image_urls[page_no - 1] if 0 < page_no <= len(lf.page_image_urls) else None
     regions = offer_dates.page_regions(con, lf.id, page_no)
-    offers = []
+    offers, own_texts = [], []
     for i, r in enumerate(raws):
         o = normalize(r, leaflet_id=lf.id, store=lf.store, page_no=page_no, valid_from=lf.valid_from,
                       valid_to=lf.valid_to, page_image_url=img, source=source, rate_czk_per_pln=rate, idx=i)
         if o:
-            own_text = " ".join(filter(None, (r.conditions_text, r.discount_text)))
-            o.valid_from, o.valid_to = offer_dates.offer_validity(own_text, o.bbox, regions,
-                                                                  lf.valid_from, lf.valid_to)
             offers.append(o)
+            own_texts.append(" ".join(filter(None, (r.conditions_text, r.discount_text))))
     drop_shared_bboxes(offers)
+    tiles = [o.bbox for o in offers if o.bbox]
+    for o, own_text in zip(offers, own_texts):
+        o.valid_from, o.valid_to = offer_dates.offer_validity(own_text, o.bbox, regions,
+                                                              lf.valid_from, lf.valid_to, tiles)
     dbm.save_page(con, lf.id, page_no, source.value, [r.model_dump() for r in raws], needs_review=not offers)
     dbm.replace_offers(con, lf.id, page_no, offers)
     return offers

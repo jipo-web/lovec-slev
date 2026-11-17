@@ -120,39 +120,75 @@ def page_regions(con: sqlite3.Connection, leaflet_id: str, page_no: int) -> list
     return json.loads(row[0]) if row else []
 
 
+AREA_MIN = 0.05  # a region covering at least 5 % of the page is an area, smaller ones are labels/banners
+
+
+def _area(b: list[float]) -> float:
+    return (b[2] - b[0]) * (b[3] - b[1])
+
+
+def _inside(x: float, y: float, b: list[float], pad: float = 0.01) -> bool:
+    return b[0] - pad <= x <= b[2] + pad and b[1] - pad <= y <= b[3] + pad
+
+
 def region_for(bbox: list[float] | None, regions: list[dict]) -> dict | None:
-    """Smallest date region containing the centre of the offer's tile."""
+    """Date region that applies to an offer whose tile is `bbox`.
+
+    The model answers in three shapes, all seen on real pages:
+    1. a label printed on the product tile ("OFERTA OD 16.11 DO 18.11") –
+       its box lies inside the tile,
+    2. an area of the page – the tile's centre lies inside it,
+    3. only the section banner ("CZWARTEK – SOBOTA 12.11-14.11") – it applies
+       to tiles below it, up to the next banner.
+    Regions passed here should already be parseable dates.
+    """
     if not bbox or not regions:
         return None
+    boxed = [r for r in regions if r.get("bbox") and len(r["bbox"]) == 4]
     cx, cy = (bbox[0] + bbox[2]) / 2, (bbox[1] + bbox[3]) / 2
-    best, best_area = None, 9.0
-    for r in regions:
-        b = r.get("bbox")
-        if not b or len(b) != 4:
-            continue
-        if b[0] - 0.01 <= cx <= b[2] + 0.01 and b[1] - 0.01 <= cy <= b[3] + 0.01:
-            area = (b[2] - b[0]) * (b[3] - b[1])
-            if area < best_area:
-                best, best_area = r, area
-    return best
+
+    # 1. label on the tile itself
+    labels = [r for r in boxed if _area(r["bbox"]) < AREA_MIN
+              and _inside((r["bbox"][0] + r["bbox"][2]) / 2, (r["bbox"][1] + r["bbox"][3]) / 2, bbox)]
+    if labels:
+        return min(labels, key=lambda r: _area(r["bbox"]))
+
+    # 2. area containing the tile's centre
+    areas = [r for r in boxed if _area(r["bbox"]) >= AREA_MIN and _inside(cx, cy, r["bbox"])]
+    if areas:
+        return min(areas, key=lambda r: _area(r["bbox"]))
+
+    # 3. nearest banner above the tile that overlaps it horizontally and does not sit on another tile
+    above = [r for r in boxed if _area(r["bbox"]) < AREA_MIN
+             and (r["bbox"][1] + r["bbox"][3]) / 2 <= cy and not r.get("_on_tile")]
+    overlapping = [r for r in above if min(r["bbox"][2], bbox[2]) - max(r["bbox"][0], bbox[0]) > 0]
+    if overlapping or above:  # prefer a banner over the tile's column, else the nearest one above
+        return max(overlapping or above, key=lambda r: r["bbox"][3])
+    return None
 
 
 def offer_validity(offer_text: str | None, bbox: list[float] | None, regions: list[dict],
-                   lf_from: date, lf_to: date) -> tuple[date, date]:
-    """Validity of one offer (see module docstring for the order of sources)."""
+                   lf_from: date, lf_to: date, tiles: list[list[float]] | None = None) -> tuple[date, date]:
+    """Validity of one offer (see module docstring for the order of sources).
+    `tiles` are the boxes of all offers on the page: a label sitting on some
+    other product's tile must not act as a section banner for this one."""
     own = parse_valid_text(offer_text, lf_from, lf_to)
     if own:
         return own
-    reg = region_for(bbox, regions)
+    usable = []
+    for r in regions:
+        parsed = parse_valid_text(r.get("valid_text"), lf_from, lf_to)
+        if not parsed:
+            continue
+        rb = r.get("bbox")
+        on_tile = bool(rb and tiles and _area(rb) < AREA_MIN and any(
+            _inside((rb[0] + rb[2]) / 2, (rb[1] + rb[3]) / 2, t) for t in tiles))
+        usable.append({**r, "_parsed": parsed, "_on_tile": on_tile})
+    reg = region_for(bbox, usable)
     if reg:
-        parsed = parse_valid_text(reg.get("valid_text"), lf_from, lf_to)
-        if parsed:
-            return parsed
-    # A page with exactly one banner and no usable boxes: the banner covers the page.
-    texts = {r.get("valid_text") for r in regions if r.get("valid_text")}
-    if len(texts) == 1 and not any(r.get("bbox") for r in regions):
-        parsed = parse_valid_text(texts.pop(), lf_from, lf_to)
-        if parsed:
-            return parsed
+        return reg["_parsed"]
+    # One distinct date on the whole page and no way to place it: it covers the page.
+    dates = {r["_parsed"] for r in usable}
+    if len(dates) == 1 and not any(r.get("bbox") for r in usable):
+        return dates.pop()
     return lf_from, lf_to
-

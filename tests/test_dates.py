@@ -99,3 +99,39 @@ def test_renormalize_applies_page_dates(tmp_path):
     got = {o.name_pl: (o.valid_from, o.valid_to) for o in offers}
     assert got["Kaczka świeża bez podrobów"] == (date(2026, 11, 12), date(2026, 11, 14))
     assert got["Świeży filet z piersi kurczaka"] == (date(2026, 11, 13), date(2026, 11, 14))
+
+
+# Biedronka "Codziennie niskie ceny – od 16.11", p1: the model returned only the
+# small labels printed on each tile, not areas (real answer, Nov 2026).
+P1_LF = (date(2026, 11, 16), date(2026, 11, 21))
+P1_REGIONS = [
+    {"valid_text": "OD PONIEDZIAŁKU", "bbox": [0.124, 0.026, 0.425, 0.043]},
+    {"valid_text": "OFERTA OD 16.11 DO 21.11", "bbox": [0.575, 0.156, 0.709, 0.172]},
+    {"valid_text": "OFERTA OD 16.11 DO 18.11", "bbox": [0.06, 0.442, 0.193, 0.46]},
+    {"valid_text": "OFERTA OD 16.11 DO 18.11", "bbox": [0.06, 0.8, 0.193, 0.82]},
+]
+ORANGES = [0.03, 0.33, 0.52, 0.62]
+CHEESE = [0.56, 0.04, 0.98, 0.25]
+PORK = [0.03, 0.68, 0.52, 0.86]
+
+
+def test_labels_on_tiles():
+    tiles = [ORANGES, CHEESE, PORK]
+    assert offer_validity(None, ORANGES, P1_REGIONS, *P1_LF, tiles) == (date(2026, 11, 16), date(2026, 11, 18))
+    assert offer_validity(None, PORK, P1_REGIONS, *P1_LF, tiles) == (date(2026, 11, 16), date(2026, 11, 18))
+    assert offer_validity(None, CHEESE, P1_REGIONS, *P1_LF, tiles) == (date(2026, 11, 16), date(2026, 11, 21))
+
+
+def test_label_on_another_tile_is_not_a_banner():
+    # A tile without its own label, below the oranges: the oranges' label must not leak onto it.
+    plain = [0.03, 0.63, 0.52, 0.67]
+    tiles = [ORANGES, plain]
+    assert offer_validity(None, plain, P1_REGIONS[:3], *P1_LF, tiles) == P1_LF
+
+
+def test_section_banner_above():
+    regions = [{"valid_text": "PIĄTEK – SOBOTA 13.11-14.11", "bbox": [0.35, 0.0, 0.95, 0.04]},
+               {"valid_text": "CZWARTEK – SOBOTA 12.11-14.11", "bbox": [0.05, 0.56, 0.65, 0.6]}]
+    tiles = [CHICKEN, DUCK]
+    assert offer_validity(None, DUCK, regions, *LF, tiles) == (date(2026, 11, 12), date(2026, 11, 14))
+    assert offer_validity(None, CHICKEN, regions, *LF, tiles) == (date(2026, 11, 13), date(2026, 11, 14))

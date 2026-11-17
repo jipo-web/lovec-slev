@@ -20,7 +20,6 @@ export const StoreFilterBar: React.FC<StoreFilterBarProps> = ({
     { id: 'biedronka', label: 'Biedronka', badge: 'Moja Biedronka' },
     { id: 'lidl', label: 'Lidl Polska', badge: 'Lidl Plus PL' },
     { id: 'kaufland', label: 'Kaufland PL', badge: 'Kaufland Card PL' },
-    { id: 'carrefour', label: 'Carrefour PL', badge: 'Mój Carrefour' },
   ];
 
   const currentStoreInfo = selectedStore !== 'all' ? STORES[selectedStore] : null;

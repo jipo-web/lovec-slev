@@ -1,4 +1,4 @@
-export type StoreId = 'biedronka' | 'lidl' | 'kaufland' | 'carrefour' | 'dino';
+export type StoreId = 'biedronka' | 'lidl' | 'kaufland' | 'dino';
 
 export type Verdict = 'trhak' | 'dobra_koupe' | 'nic_moc' | 'past';
 

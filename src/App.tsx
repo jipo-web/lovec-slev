@@ -11,9 +11,11 @@ import { DealDetailModal } from './components/DealDetailModal';
 import { FlyerReaderModal } from './components/FlyerReaderModal';
 import { DayPicker, toIsoDay } from './components/DayPicker';
 import { LeafletGrid } from './components/LeafletGrid';
+import { LeafletPager } from './components/LeafletPager';
 import { ShoppingListDrawer } from './components/ShoppingListDrawer';
 import { BorderShoppingGuide } from './components/BorderShoppingGuide';
-import { ShieldAlert, Sparkles, TrendingUp, ShoppingBag, ArrowRight, HelpCircle } from 'lucide-react';
+import { ShieldAlert, HelpCircle, Flame } from 'lucide-react';
+import { discountPct, MIN_VISIBLE_DISCOUNT_PCT } from './utils/format';
 
 export default function App() {
   // Navigation & View tabs
@@ -45,6 +47,40 @@ export default function App() {
 
   const [isCartOpen, setIsCartOpen] = useState(false);
   const [activeTrickModalDeal, setActiveTrickModalDeal] = useState<DealItem | null>(null);
+  const [flyerPageView, setFlyerPageView] = useState<{ leaflet: PipelineLeaflet; page: number } | null>(null);
+
+  // Open the flyer page a deal comes from (from the deal card header)
+  const handleOpenFlyerPage = (deal: DealItem) => {
+    const leaflet = leaflets?.find((lf) => lf.id === deal.leafletId);
+    if (leaflet && leaflet.page_image_urls.length > 0) {
+      setFlyerPageView({ leaflet, page: deal.flyerPage });
+      return;
+    }
+    if (deal.pageImageUrl) {
+      // No leaflet record, but the offer carries its own page image
+      setFlyerPageView({
+        leaflet: {
+          id: deal.leafletId ?? deal.id,
+          store: deal.store,
+          title: deal.flyerName,
+          valid_from: deal.validFrom,
+          valid_to: deal.validUntil,
+          source_url: STORES[deal.store].website,
+          pdf_url: null,
+          pages: 1,
+          thumbnail_url: null,
+          page_image_urls: [deal.pageImageUrl],
+          offer_count: 1,
+          is_food: true,
+        },
+        page: 1,
+      });
+      return;
+    }
+    // Mock data without page images: at least switch to the flyers tab
+    setSelectedStore(deal.store);
+    setActiveTab('flyers');
+  };
 
   // Cart & Custom items state with localStorage
   const [cart, setCart] = useState<CartItem[]>(() => {
@@ -243,7 +279,6 @@ export default function App() {
       dino: 0,
       lidl: 0,
       kaufland: 0,
-      carrefour: 0,
     };
     allDeals.forEach((d) => {
       counts[d.store] = (counts[d.store] || 0) + 1;
@@ -252,6 +287,58 @@ export default function App() {
   }, [allDeals]);
 
   const cartItemIds = useMemo(() => new Set(cart.map((c) => c.deal.id)), [cart]);
+
+  // Deals valid on the selected day (before store/category/search filters)
+  const dealsForDay = useMemo(
+    () => allDeals.filter((d) => !generatedAt || (d.validFrom <= selectedDay && d.validUntil >= selectedDay)),
+    [allDeals, generatedAt, selectedDay]
+  );
+
+  // Hero statistics computed from real data instead of hard-coded marketing numbers
+  const heroStats = useMemo(() => {
+    const stores = new Set(dealsForDay.map((d) => d.store)).size;
+    const discounts = dealsForDay
+      .map((d) => discountPct(d.promoPricePln, d.regularPricePln))
+      .filter((p): p is number => p != null && p >= MIN_VISIBLE_DISCOUNT_PCT)
+      .sort((a, b) => a - b);
+    const median = discounts.length ? discounts[Math.floor(discounts.length / 2)] : 0;
+    const trhaky = dealsForDay.filter((d) => d.verdict === 'trhak').length;
+    return { offers: dealsForDay.length, stores, medianDiscount: Math.round(median), trhaky };
+  }, [dealsForDay]);
+
+  // Top 6 discounts across stores (max 2 per store so one chain cannot fill the strip)
+  const topDeals = useMemo(() => {
+    const perStore: Record<string, number> = {};
+    const picked: DealItem[] = [];
+    const ranked = dealsForDay
+      .map((d) => ({ d, pct: discountPct(d.promoPricePln, d.regularPricePln) ?? 0 }))
+      // Skip traps, multi-buy tricks ("2nd for 1 zł") and implausible >80 % cuts
+      // (those are usually a unit price parsed as the old price).
+      .filter(
+        (x) =>
+          x.pct >= MIN_VISIBLE_DISCOUNT_PCT &&
+          x.pct <= 80 &&
+          x.d.verdict !== 'past' &&
+          x.d.trickType !== 'trick_warning'
+      )
+      .sort((a, b) => b.pct - a.pct);
+    for (const { d } of ranked) {
+      if ((perStore[d.store] ?? 0) >= 2) continue;
+      perStore[d.store] = (perStore[d.store] ?? 0) + 1;
+      picked.push(d);
+      if (picked.length === 6) break;
+    }
+    return picked;
+  }, [dealsForDay]);
+  const topDealIds = useMemo(() => new Set(topDeals.map((d) => d.id)), [topDeals]);
+  const showTopDeals =
+    activeTab === 'deals' &&
+    topDeals.length > 0 &&
+    selectedStore === 'all' &&
+    selectedCategory === 'all' &&
+    selectedTrickType === 'all' &&
+    selectedVerdict === 'all' &&
+    !searchQuery.trim();
 
   return (
     <div className="min-h-screen bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100 flex flex-col transition-colors selection:bg-red-100 selection:text-red-900">
@@ -271,40 +358,39 @@ export default function App() {
 
       {/* Main Content Container */}
       <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-6 space-y-6">
-        {/* Hero Section */}
+        {/* Hero Section – one compact row */}
         {activeTab === 'deals' && (
-          <div className="p-6 sm:p-8 rounded-3xl bg-gradient-to-br from-white via-slate-50 to-red-50/40 dark:from-slate-900 dark:via-slate-900 dark:to-red-950/20 border border-slate-200 dark:border-slate-800 shadow-xs">
-            <div className="flex flex-col lg:flex-row items-start lg:items-center justify-between gap-6">
-              <div className="max-w-2xl">
-                <div className="flex items-center gap-2 mb-2 text-xs font-semibold text-red-600 dark:text-red-400 font-mono tracking-wider uppercase">
-                  <ShieldAlert className="w-4 h-4" />
-                  <span>Nákupní watchdog pro české zákazníky</span>
-                </div>
-                <h1 className="text-2xl sm:text-4xl font-extrabold tracking-tight text-slate-900 dark:text-white leading-tight">
-                  Polské akční letáky bez slevových chytáků
-                </h1>
-                <p className="mt-2 text-sm sm:text-base text-slate-600 dark:text-slate-300 leading-relaxed">
-                  Sledujeme aktuální letáky <strong>Dino (marketdino.pl)</strong>, <strong>Biedronka</strong>, <strong>Lidl.pl</strong>, <strong>Kaufland.pl</strong> a <strong>Carrefour</strong>. Odhalujeme skryté podmínky věrnostních aplikací a počítáme reálnou úsporu v českých korunách.
-                </p>
+          <div className="p-4 sm:p-5 rounded-2xl bg-gradient-to-r from-white via-slate-50 to-red-50/40 dark:from-slate-900 dark:via-slate-900 dark:to-red-950/20 border border-slate-200 dark:border-slate-800 shadow-xs flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+            <div className="min-w-0">
+              <div className="flex items-center gap-2 text-[11px] font-semibold text-red-600 dark:text-red-400 font-mono tracking-wider uppercase">
+                <ShieldAlert className="w-3.5 h-3.5" />
+                <span>Nákupní watchdog pro české zákazníky</span>
               </div>
-
-              {/* Fast stats card */}
-              <div className="w-full lg:w-auto grid grid-cols-2 sm:grid-cols-3 gap-3 p-4 rounded-2xl bg-white dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 shadow-xs shrink-0 text-xs">
-                <div>
-                  <span className="text-slate-400 block font-medium">Sledované řetězce:</span>
-                  <strong className="text-sm sm:text-base font-bold text-slate-900 dark:text-white">5 obchodů</strong>
-                  <span className="text-[11px] text-slate-500 block">Dino, Biedronka...</span>
+              <h1 className="mt-1 text-xl sm:text-2xl font-extrabold tracking-tight text-slate-900 dark:text-white leading-tight">
+                Polské akční letáky bez slevových chytáků
+              </h1>
+              <p className="mt-1 text-xs sm:text-sm text-slate-600 dark:text-slate-300">
+                Biedronka, Lidl.pl, Kaufland.pl a Dino – podmínky věrnostních karet odhalené, ceny přepočtené na koruny.
+              </p>
+            </div>
+            <div className="grid grid-cols-4 gap-2 sm:gap-4 shrink-0 text-center">
+              <div>
+                <div className="text-lg sm:text-xl font-black text-slate-900 dark:text-white font-mono tabular-nums">{heroStats.offers}</div>
+                <div className="text-[10px] sm:text-[11px] text-slate-500">nabídek dnes</div>
+              </div>
+              <div>
+                <div className="text-lg sm:text-xl font-black text-slate-900 dark:text-white font-mono tabular-nums">{heroStats.stores}</div>
+                <div className="text-[10px] sm:text-[11px] text-slate-500">řetězce</div>
+              </div>
+              <div>
+                <div className="text-lg sm:text-xl font-black text-emerald-600 dark:text-emerald-400 font-mono tabular-nums">
+                  {heroStats.medianDiscount > 0 ? `-${heroStats.medianDiscount} %` : '–'}
                 </div>
-                <div>
-                  <span className="text-slate-400 block font-medium">Běžná úspora:</span>
-                  <strong className="text-sm sm:text-base font-bold text-emerald-600 dark:text-emerald-400 font-mono">35 až 55 %</strong>
-                  <span className="text-[11px] text-slate-500 block">oproti nákupu v ČR</span>
-                </div>
-                <div className="col-span-2 sm:col-span-1">
-                  <span className="text-slate-400 block font-medium">Aktuální kurz:</span>
-                  <strong className="text-sm sm:text-base font-bold text-red-600 dark:text-red-400 font-mono">1 PLN = {exchangeRate} Kč</strong>
-                  <span className="text-[11px] text-slate-500 block">živý přepočet cen</span>
-                </div>
+                <div className="text-[10px] sm:text-[11px] text-slate-500">typická sleva</div>
+              </div>
+              <div>
+                <div className="text-lg sm:text-xl font-black text-red-600 dark:text-red-400 font-mono tabular-nums">{exchangeRate}</div>
+                <div className="text-[10px] sm:text-[11px] text-slate-500">Kč / 1 zł</div>
               </div>
             </div>
           </div>
@@ -346,10 +432,40 @@ export default function App() {
               onVerdictChange={setSelectedVerdict}
             />
 
+            {/* Top 6 discounts across stores */}
+            {showTopDeals && (
+              <section className="space-y-3">
+                <div className="flex items-center gap-2">
+                  <Flame className="w-4 h-4 text-amber-500" />
+                  <h2 className="text-sm font-bold text-slate-900 dark:text-white">Největší slevy napříč obchody</h2>
+                  <span className="text-[11px] text-slate-500 dark:text-slate-400">· podle výše slevy, max. 2 na řetězec</span>
+                </div>
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
+                  {topDeals.map((deal, idx) => {
+                    const cartItem = cart.find((i) => i.deal.id === deal.id);
+                    return (
+                      <DealCard
+                        key={`top-${deal.id}`}
+                        deal={deal}
+                        topRank={idx + 1}
+                        exchangeRate={exchangeRate}
+                        cartQuantity={cartItem ? cartItem.quantity : 0}
+                        onAddToCart={handleAddToCart}
+                        onUpdateQuantity={handleUpdateQuantity}
+                        onOpenTrickModal={setActiveTrickModalDeal}
+                        onOpenFlyerPage={handleOpenFlyerPage}
+                      />
+                    );
+                  })}
+                </div>
+                <h2 className="text-sm font-bold text-slate-900 dark:text-white pt-2">Všechny nabídky</h2>
+              </section>
+            )}
+
             {/* Deals Grid */}
             {filteredDeals.length > 0 ? (
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
-                {filteredDeals.map((deal) => {
+                {filteredDeals.filter((d) => !showTopDeals || !topDealIds.has(d.id)).map((deal) => {
                   const cartItem = cart.find((i) => i.deal.id === deal.id);
                   const quantity = cartItem ? cartItem.quantity : 0;
 
@@ -362,6 +478,7 @@ export default function App() {
                       onAddToCart={handleAddToCart}
                       onUpdateQuantity={handleUpdateQuantity}
                       onOpenTrickModal={setActiveTrickModalDeal}
+                      onOpenFlyerPage={handleOpenFlyerPage}
                     />
                   );
                 })}
@@ -416,10 +533,10 @@ export default function App() {
       <footer className="mt-16 border-t border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 py-8 text-xs text-slate-500 dark:text-slate-400 transition-colors">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex flex-col sm:flex-row items-center justify-between gap-4">
           <div>
-            <span className="font-bold text-slate-800 dark:text-white">LovciSlev PL</span> · Nezávislý srovnávač polských akčních letáků a hlídač chytáků pro české nakupující.
+            <span className="font-bold text-slate-800 dark:text-white">Lovec slev</span> · Nezávislý srovnávač polských akčních letáků a hlídač chytáků pro české nakupující.
           </div>
           <div className="flex items-center gap-4 text-[11px]">
-            <span>Sledujeme: Biedronka · Dino · Lidl · Kaufland · Carrefour</span>
+            <span>Sledujeme: Biedronka · Dino · Lidl · Kaufland</span>
             <span>·</span>
             <span>Kurz: 1 PLN = {exchangeRate} Kč</span>
           </div>
@@ -427,6 +544,14 @@ export default function App() {
       </footer>
 
       {/* Modals & Slide-overs */}
+      {flyerPageView && (
+        <LeafletPager
+          leaflet={flyerPageView.leaflet}
+          initialPage={flyerPageView.page}
+          onClose={() => setFlyerPageView(null)}
+        />
+      )}
+
       <DealDetailModal
         deal={activeTrickModalDeal}
         exchangeRate={exchangeRate}
@@ -434,6 +559,7 @@ export default function App() {
         onClose={() => setActiveTrickModalDeal(null)}
         onAddToCart={handleAddToCart}
         isInCart={activeTrickModalDeal ? cartItemIds.has(activeTrickModalDeal.id) : false}
+        onOpenFlyerPage={handleOpenFlyerPage}
       />
 
       <ShoppingListDrawer

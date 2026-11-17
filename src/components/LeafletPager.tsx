@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { PipelineLeaflet } from '../data/loadData';
 import { STORES } from '../data/stores';
 import { ChevronLeft, ChevronRight, X } from 'lucide-react';
@@ -6,17 +6,31 @@ import { ChevronLeft, ChevronRight, X } from 'lucide-react';
 interface LeafletPagerProps {
   leaflet: PipelineLeaflet;
   onClose: () => void;
+  initialPage?: number;
 }
 
-export const LeafletPager: React.FC<LeafletPagerProps> = ({ leaflet, onClose }) => {
-  const [index, setIndex] = useState(0);
+export const LeafletPager: React.FC<LeafletPagerProps> = ({ leaflet, onClose, initialPage }) => {
   const pages = leaflet.page_image_urls;
   const total = pages.length;
+  const [index, setIndex] = useState(() =>
+    Math.min(Math.max((initialPage ?? 1) - 1, 0), Math.max(total - 1, 0))
+  );
   const store = STORES[leaflet.store];
 
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose();
+      if (e.key === 'ArrowLeft') setIndex((i) => Math.max(0, i - 1));
+      if (e.key === 'ArrowRight') setIndex((i) => Math.min(total - 1, i + 1));
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [onClose, total]);
+
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-xs">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-xs" onClick={onClose}>
       <div
+        onClick={(e) => e.stopPropagation()}
         className="bg-white dark:bg-slate-900 w-full max-w-3xl rounded-3xl border border-slate-200 dark:border-slate-800 shadow-2xl overflow-hidden flex flex-col max-h-[95vh]"
         role="dialog"
         aria-modal="true"

@@ -41,7 +41,7 @@ export const Navbar: React.FC<NavbarProps> = ({
               </div>
               <div>
                 <span className="text-lg font-bold tracking-tight text-slate-900 dark:text-white whitespace-nowrap block leading-tight">
-                  LovciSlev <span className="text-red-600">PL</span>
+                  Lovec <span className="text-red-600">slev</span>
                 </span>
                 <span className="text-[11px] font-medium text-slate-500 dark:text-slate-400 block leading-tight">
                   Hlídač chytáků v polských letácích

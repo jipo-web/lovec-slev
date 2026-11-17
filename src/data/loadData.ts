@@ -118,7 +118,7 @@ export function offerToDealItem(o: PipelineOffer, _rate: number): DealItem {
   return {
     id: o.id,
     store: o.store,
-    title: o.name_pl || o.name,
+    title: o.name || o.name_pl,
     polishTitle: o.name_pl || o.name,
     category: CATEGORY_MAP[o.category] ?? 'trvanlive',
     promoPricePln: o.price_pln,

@@ -168,9 +168,9 @@ export const FlyerReaderModal: React.FC<FlyerReaderModalProps> = ({
                     <div>
                       <div className="flex items-start justify-between gap-3">
                         <div>
-                          <span className="text-[11px] font-mono text-slate-400 block">
-                            {deal.polishTitle}
-                          </span>
+                          {deal.polishTitle.trim().toLowerCase() !== deal.title.trim().toLowerCase() && (
+                            <span className="text-[11px] font-mono text-slate-400 block">{deal.polishTitle}</span>
+                          )}
                           <h4 className="text-sm font-bold text-slate-900 dark:text-white mt-0.5">
                             {deal.title}
                           </h4>

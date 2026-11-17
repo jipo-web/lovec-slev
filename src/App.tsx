@@ -284,7 +284,7 @@ export default function App() {
         const bDiscount = b.regularPricePln - b.promoPricePln;
         return bDiscount - aDiscount;
       }
-      return a.title.localeCompare(b.title, 'cs');
+      return a.title.localeCompare(b.title, 'pl');
     });
   }, [allDeals, generatedAt, selectedDay, selectedStore, selectedCategory, selectedTrickType, selectedVerdict, searchQuery, sortBy, exchangeRate]);
 

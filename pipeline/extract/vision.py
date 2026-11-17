@@ -21,7 +21,6 @@ PROMPT = """Jesteś asystentem do odczytu gazetek promocyjnych polskich sklepów
 Na obrazie jest jedna strona gazetki. Wypisz WSZYSTKIE produkty z ceną promocyjną.
 Zwróć wyłącznie JSON: {"offers": [ ... ]} gdzie każdy element ma pola:
 - name: nazwa produktu po polsku, bez marki jeśli jest w polu brand
-- name_cs: ta sama nazwa przetłumaczona na język czeski (krótko, naturalnie, np. "Mléko UHT 3,2 %", "Kuřecí stehna"), markę zostaw bez zmian
 - brand: marka lub null
 - quantity_text: gramatura/objętość/ilość tak jak wydrukowano ("500 g", "1 l", "3 x 200 g", "za kg") lub null
 - price_text: cena w złotych, jaką klient płaci za 1 sztukę (lub za kg) w tej promocji, jak wydrukowano ("4,99", "14,99/kg"). NIGDY nie wpisuj tu procentu ani ceny "drugiego" produktu. Dla mechanik typu "drugi tańszy produkt X% taniej", "drugi za Y zł", "1+1 gratis", "2+1", "przy zakupie 2" wpisz do price_text cenę regularną 1 sztuki wydrukowaną przy produkcie, a mechanikę do conditions_text. Jeśli przy produkcie nie ma żadnej ceny w złotych, wpisz null.

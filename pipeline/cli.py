@@ -9,6 +9,7 @@
   translate           optional: Czech names (cheap text model); not part of run, the web shows Polish names
   build               write public/data/*.json
   dates [--vision]    date banners of page sections ("czw.–sob. 12.11-14.11"), cheap model call
+  locate [--vision]   precise product tiles for the crops on the web, cheap model call
   run [--vision]      all of the above
   verify              one leaflet per store: counts, sample offers, cost estimate
 """
@@ -23,8 +24,8 @@ from pathlib import Path
 from . import db as dbm
 from . import dates as offer_dates
 from .build import build
-from .config import CACHE_DIR, VISION_MAX_PAGES_PER_RUN
-from .extract import structured, text_layer
+from .config import CACHE_DIR, LOCATE_MAX_PAGES_PER_RUN, VISION_MAX_PAGES_PER_RUN
+from .extract import locate as boxes, structured, text_layer
 from .http import download
 from .match import assign_product_ids
 from .models import Leaflet, Offer, PageSource, RawOffer
@@ -70,8 +71,12 @@ def cmd_fetch(con, pdfs: bool = False) -> None:
 def _normalize_page(con, lf: Leaflet, page_no: int, raws: list[RawOffer], source: PageSource, rate: float) -> list[Offer]:
     img = lf.page_image_urls[page_no - 1] if 0 < page_no <= len(lf.page_image_urls) else None
     regions = offer_dates.page_regions(con, lf.id, page_no)
+    precise = boxes.page_boxes(con, lf.id, page_no)
     offers, own_texts = [], []
     for i, r in enumerate(raws):
+        p = precise.get(i)
+        if p and p.get("name") == r.name and p.get("bbox"):
+            r = r.model_copy(update={"bbox": p["bbox"]})
         o = normalize(r, leaflet_id=lf.id, store=lf.store, page_no=page_no, valid_from=lf.valid_from,
                       valid_to=lf.valid_to, page_image_url=img, source=source, rate_czk_per_pln=rate, idx=i)
         if o:
@@ -117,6 +122,56 @@ def cmd_renormalize(con) -> int:
 
 
 IMAGE_STORES = ("biedronka", "lidl", "kaufland")  # page images from the store API → vision model
+
+
+def cmd_locate(con, limit_pages: int = LOCATE_MAX_PAGES_PER_RUN) -> int:
+    """Ask the model for precise product tiles on every current page that has
+    offers and no entry in page_boxes yet. Returns the number of pages done."""
+    from .extract.vision import VISION_MODEL
+
+    boxes.ensure_schema(con)
+    today = date.today().isoformat()
+    rows = con.execute(
+        "SELECT p.leaflet_id, p.page_no, p.raw_json FROM pages p "
+        "JOIN leaflets l ON l.id = p.leaflet_id "
+        "LEFT JOIN page_boxes b ON b.leaflet_id = p.leaflet_id AND b.page_no = p.page_no "
+        "WHERE l.valid_to >= ? AND b.leaflet_id IS NULL AND p.page_no > 0 "
+        "AND EXISTS (SELECT 1 FROM offers o WHERE o.leaflet_id = p.leaflet_id AND o.page_no = p.page_no) "
+        "ORDER BY l.valid_from DESC, p.leaflet_id, p.page_no", (today,)).fetchall()
+    done = 0
+    leaflets: dict[str, Leaflet] = {}
+    for lid, page_no, raw_json in rows:
+        if done >= limit_pages:
+            print(f"locate: budget of {limit_pages} pages reached, {len(rows) - done} left for the next run")
+            break
+        lf = leaflets.get(lid) or leaflets.setdefault(lid, dbm.row_to_leaflet(
+            con.execute("SELECT * FROM leaflets WHERE id=?", (lid,)).fetchone()))
+        if not (0 < page_no <= len(lf.page_image_urls)) or not lf.page_image_urls[page_no - 1]:
+            continue
+        raws = json.loads(raw_json or "[]")
+        products = []
+        for i, d in enumerate(raws):
+            if not d.get("name"):
+                continue
+            b = d.get("bbox")
+            # Dino gives only a hotspot point (stored as a tiny box) – pass it as a hint.
+            hint = (b[0], b[1]) if lf.store == "dino" and b and len(b) == 4 else None
+            products.append({"id": i + 1, "name": d["name"], "price": d.get("price_text"), "hint": hint})
+        if not products:
+            continue
+        img = CACHE_DIR / lf.store / f"{lf.id.split(':')[1]}-{page_no:03d}.jpg"
+        try:
+            download(lf.page_image_urls[page_no - 1], img)
+            found = boxes.locate(img, products)
+        except Exception as e:
+            print(f"[{lf.store}] locate failed p{page_no}: {e}", file=sys.stderr)
+            continue
+        stored = {str(i - 1): {"name": raws[i - 1]["name"], "bbox": b} for i, b in found.items()}
+        con.execute("INSERT OR REPLACE INTO page_boxes (leaflet_id, page_no, boxes_json, model) VALUES (?,?,?,?)",
+                    (lid, page_no, json.dumps(stored, ensure_ascii=False), VISION_MODEL))
+        con.commit()
+        done += 1
+    return done
 
 
 def cmd_dates(con, limit_pages: int = VISION_MAX_PAGES_PER_RUN) -> int:
@@ -264,7 +319,7 @@ def cmd_verify(con) -> None:
 
 def main(argv: list[str] | None = None) -> None:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("command", choices=["discover", "fetch", "extract", "dates", "renormalize", "translate", "score",
+    ap.add_argument("command", choices=["discover", "fetch", "extract", "locate", "dates", "renormalize", "translate", "score",
                                        "build", "run", "verify"])
     ap.add_argument("--vision", action="store_true", help="use the vision model where needed")
     ap.add_argument("--stores", nargs="*", help="limit discovery to these stores")
@@ -282,6 +337,8 @@ def main(argv: list[str] | None = None) -> None:
             cmd_fetch(con, a.pdf)
         if a.command in ("extract", "run"):
             cmd_extract(con, a.vision, a.max_pages, a.text_layer)
+        if a.command == "locate" or (a.command == "run" and a.vision and LOCATE_MAX_PAGES_PER_RUN > 0):
+            print(f"locate: {cmd_locate(con, LOCATE_MAX_PAGES_PER_RUN)} pages")
         if a.command == "dates" or (a.command == "run" and a.vision):
             print(f"dates: {cmd_dates(con, a.max_pages)} pages")
         if a.command in ("renormalize", "run"):

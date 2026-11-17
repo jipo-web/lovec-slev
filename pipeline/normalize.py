@@ -167,6 +167,8 @@ def parse_discount(text: str | None) -> float | None:
 
 # ----------------------------------------------------------- conditions
 
+_NTH = {"drug": 2, "trzec": 3, "czwart": 4}
+
 _APP_KW = ("lidl plus", "z aplikacja", "z karta", "moja biedronka", "kaufland card",
            "k-card", "kupon", "w aplikacji")
 
@@ -187,8 +189,9 @@ def parse_conditions(text: str | None, price_text: str, discount_text: str | Non
     m = re.search(r"(?<![\d,.])(\d)\s*\+\s*(\d)(?![\d,.])", s)
     if m:
         hit(int(m.group(1)) + int(m.group(2)))
-    if re.search(r"\bdrugi\w*\b[^.]*?(?:\d+\s*%|gratis|taniej)", s):
-        hit(2)
+    m = re.search(r"\b(drug|trzec|czwart)\w*\b[^.]*?(?:\d+\s*%|gratis|taniej|\bza\s*\d)", s)
+    if m:
+        hit(_NTH[m.group(1)])
     m = re.search(r"przy zakupie\s+(\d+)", s)
     if m:
         hit(int(m.group(1)))
@@ -281,6 +284,54 @@ def normalize_category(text: str | None, name: str | None = None) -> str:
     return "ostatni"
 
 
+# ----------------------------------------------------------------- bbox
+
+def normalize_bbox(raw: list | None) -> list[float] | None:
+    """Return [x0, y0, x1, y1] as fractions of the page (0..1), or None.
+
+    Vision models mix scales even when asked for fractions. Checked visually
+    on real pages (Nov 2026): per axis, values <= 1 are fractions, values up
+    to 100 are percent and anything larger is Gemini's native 0..1000 grid
+    (not pixels – the maxima stay under 1000 on pages of every size).
+    """
+    if not raw or len(raw) != 4:
+        return None
+    try:
+        v = [float(x) for x in raw]
+    except (TypeError, ValueError):
+        return None
+    if any(x != x or x < 0 for x in v):  # NaN or negative
+        return None
+    for a, b in ((0, 2), (1, 3)):
+        m = max(v[a], v[b])
+        div = 1.0 if m <= 1 else 100.0 if m <= 100 else 1000.0
+        lo, hi = sorted((min(v[a] / div, 1.0), min(v[b] / div, 1.0)))
+        v[a], v[b] = lo, hi
+    if v[2] - v[0] < 0.01 or v[3] - v[1] < 0.01:
+        return None
+    return [round(x, 4) for x in v]
+
+
+def drop_shared_bboxes(offers: list) -> None:
+    """Different products on one page must not share a tile: when the model
+    returns (almost) the same box for two different names, it guessed at least
+    one of them, so neither crop can be trusted. Mutates `offers` in place."""
+    boxes = [(i, o.bbox) for i, o in enumerate(offers) if o.bbox]
+    bad: set[int] = set()
+    for k, (i, a) in enumerate(boxes):
+        for j, b in boxes[k + 1:]:
+            if offers[i].name_pl == offers[j].name_pl:
+                continue
+            ix = max(0.0, min(a[2], b[2]) - max(a[0], b[0]))
+            iy = max(0.0, min(a[3], b[3]) - max(a[1], b[1]))
+            inter = ix * iy
+            union = (a[2] - a[0]) * (a[3] - a[1]) + (b[2] - b[0]) * (b[3] - b[1]) - inter
+            if union > 0 and inter / union > 0.8:
+                bad.update((i, j))
+    for i in bad:
+        offers[i].bbox = None
+
+
 # ------------------------------------------------------------ matching
 
 def normalize_name_for_matching(name: str) -> str:
@@ -295,7 +346,7 @@ def normalize_name_for_matching(name: str) -> str:
 # ------------------------------------------------------------ normalize
 
 _MB_PCT = re.compile(r"drug[iay]\w*[^%\d]{0,40}?(\d{1,3})\s*%\s*taniej|(\d{1,3})\s*%\s*taniej[^.]{0,30}drug", re.I)
-_MB_ZL = re.compile(r"drug[iay]\w*[^\d]{0,40}?za\s*(\d+[,.]?\d*)\s*z[łl]", re.I)
+_MB_ZL = re.compile(r"(drug|trzec|czwart)\w*[^\d]{0,40}?za\s*(\d+[,.]?\d*)\s*z[łl]", re.I)
 _MB_PLUS = re.compile(r"\b(\d)\s*\+\s*(\d)\b(?:\s*gratis)?", re.I)
 _MB_GRATIS = re.compile(r"(?:drug[iay]\w*|ta[ńn]szy produkt)\s+(?:produkt\s+)?gratis|tańszy produkt gratis", re.I)
 
@@ -312,9 +363,9 @@ def multibuy_effective_price(price: float, text: str | None) -> tuple[float, str
             return round(price * (1 - pct / 200), 2), f"2. kus -{pct} %"
     m = _MB_ZL.search(text)
     if m:
-        second = _num(m.group(1))
-        if second < price:
-            return round((price + second) / 2, 2), f"2. kus za {second:g} zł"
+        n, cheap = _NTH[m.group(1).lower()], _num(m.group(2))
+        if cheap < price:
+            return round((price * (n - 1) + cheap) / n, 2), f"{n}. kus za {cheap:g} zł"
     if _MB_GRATIS.search(text):
         return round(price / 2, 2), "1+1 zdarma"
     m = _MB_PLUS.search(text)
@@ -323,6 +374,30 @@ def multibuy_effective_price(price: float, text: str | None) -> tuple[float, str
         if a and b and "gratis" in text.lower():
             return round(price * a / (a + b), 2), f"{a}+{b} zdarma"
     return price, None
+
+
+MAX_PLAUSIBLE_DISCOUNT = 80.0  # percent; deeper cuts are almost always a misread
+
+
+def plausible_old_price(price: float, old: float, qty: float | None, unit: str | None,
+                        printed_unit_price: float | None, printed_discount: float | None) -> bool:
+    """False when `old` is really a unit price (per kg / l) or otherwise absurd.
+
+    Seen in real data: "Pasta do zębów 75 ml 13,49 zł" with old 179,87 – that
+    is the price per litre. A printed discount ("-85%") vouches for a deep cut.
+    """
+    if old <= price:
+        return True
+    # For a 1 kg / 1 l pack the unit price equals the pack price, so the
+    # comparison would throw away genuine old prices – only check other sizes.
+    if qty and unit in ("kg", "l") and abs(qty - 1) > 0.001:
+        for up in (printed_unit_price, price / qty):
+            if up and abs(old - up) <= max(0.02, up * 0.01):
+                return False
+    cut = (1 - price / old) * 100
+    if cut > MAX_PLAUSIBLE_DISCOUNT and not (printed_discount and printed_discount >= cut - 5):
+        return False
+    return True
 
 
 def looks_like_misread_percent(price: float, text: str | None) -> bool:
@@ -335,7 +410,7 @@ def normalize(raw: RawOffer, *, leaflet_id: str, store: str, page_no: int,
               source: PageSource, rate_czk_per_pln: float | None, idx: int) -> Offer | None:
     """Build an `Offer` from a `RawOffer`; None if the price cannot be parsed."""
     price = parse_price(raw.price_text)
-    name = re.sub(r"[\s.,;:\-–—]+$", "", re.sub(r"\s+", " ", raw.name or "").strip())
+    name = _clean_name(raw.name)
     if price is None or not name:
         return None
     cond_src = " ".join(t for t in (raw.conditions_text, raw.discount_text) if t)
@@ -343,6 +418,12 @@ def normalize(raw: RawOffer, *, leaflet_id: str, store: str, page_no: int,
         return None
     old = parse_price(raw.old_price_text) if raw.old_price_text else None
     mechanic = None
+    nth = _MB_ZL.search(cond_src) if cond_src else None
+    if nth and old and old > price and abs(price - _num(nth.group(2))) < 0.01:
+        # "Drugi za 1 zł": the model put the price of the cheap N-th item into
+        # price_text and the regular price into old_price_text. The customer
+        # really pays the average over N items.
+        price, old = old, None
     if not (old and old > price):  # printed price is the regular one → derive the effective price
         eff, mechanic = multibuy_effective_price(price, cond_src)
         if mechanic:
@@ -354,9 +435,16 @@ def normalize(raw: RawOffer, *, leaflet_id: str, store: str, page_no: int,
         if m:
             qty, unit = 1.0, _unit_info(m.group(1))[1]
 
-    disc = parse_discount(raw.discount_text)
-    if disc is None and old and old > price:
+    printed_up, _ = parse_unit_price_text(raw.unit_price_text)
+    if old and not plausible_old_price(price, old, qty, unit, printed_up, parse_discount(raw.discount_text)):
+        old = None
+
+    # Both prices known → compute the real cut. The printed percent often
+    # describes only the 2nd item ("drugi 82% taniej, każda z 2 sztuk").
+    if old and old > price:
         disc = round((1 - price / old) * 100, 1)
+    else:
+        disc = parse_discount(raw.discount_text)
 
     up, up_unit = effective_unit_price(price, qty, unit)
     if up is None:
@@ -364,16 +452,20 @@ def normalize(raw: RawOffer, *, leaflet_id: str, store: str, page_no: int,
 
     return Offer(
         id=f"{leaflet_id}:p{page_no}:{idx}", leaflet_id=leaflet_id, store=store,  # type: ignore[arg-type]
-        page_no=page_no, name=name, name_pl=name, brand=raw.brand,
+        page_no=page_no, name=_clean_name(raw.name_cs) or name, name_pl=name, brand=raw.brand,
         quantity=qty, unit=unit, quantity_text=qtext,
         price_pln=price, old_price_pln=old if old and old > price else None,
         discount_pct=disc, unit_price_pln=up, unit_price_unit=up_unit,
         price_czk=round(price * rate_czk_per_pln, 2) if rate_czk_per_pln else None,
         conditions=_with_mechanic(parse_conditions(raw.conditions_text, raw.price_text, raw.discount_text), mechanic),
         category=normalize_category(raw.category, name),
-        valid_from=valid_from, valid_to=valid_to, bbox=raw.bbox,
+        valid_from=valid_from, valid_to=valid_to, bbox=normalize_bbox(raw.bbox),
         page_image_url=page_image_url, source=source, ean=raw.ean,
     )
+
+
+def _clean_name(text: str | None) -> str:
+    return re.sub(r"[\s.,;:\-–—]+$", "", re.sub(r"\s+", " ", text or "").strip())
 
 
 def _with_mechanic(c: Condition, mechanic: str | None) -> Condition:

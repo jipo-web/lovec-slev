@@ -23,7 +23,7 @@ Zwróć wyłącznie JSON: {"offers": [ ... ]} gdzie każdy element ma pola:
 - name: nazwa produktu po polsku, bez marki jeśli jest w polu brand
 - brand: marka lub null
 - quantity_text: gramatura/objętość/ilość tak jak wydrukowano ("500 g", "1 l", "3 x 200 g", "za kg") lub null
-- price_text: cena w złotych, jaką klient płaci za 1 sztukę (lub za kg) w tej promocji, jak wydrukowano ("4,99", "14,99/kg"). NIGDY nie wpisuj tu procentu ani ceny "drugiego" produktu. Dla mechanik typu "drugi tańszy produkt X% taniej", "drugi za Y zł", "1+1 gratis", "2+1", "przy zakupie 2" wpisz do price_text cenę regularną 1 sztuki wydrukowaną przy produkcie, a mechanikę do conditions_text. Jeśli przy produkcie nie ma żadnej ceny w złotych, wpisz null.
+- price_text: cena w złotych, jaką klient płaci za 1 sztukę (lub za kg) w tej promocji, jak wydrukowano ("4,99", "14,99/kg"). Zawsze z przecinkiem i groszami: małe cyfry groszy u góry ("4⁹⁹") zapisz "4,99", cenę w pełnych złotych bez groszy ("269 zł/szt.") zapisz "269,00". NIGDY nie wpisuj tu procentu ani ceny "drugiego" produktu. Dla mechanik typu "drugi tańszy produkt X% taniej", "drugi za Y zł", "1+1 gratis", "2+1", "przy zakupie 2" wpisz do price_text cenę regularną 1 sztuki wydrukowaną przy produkcie, a mechanikę do conditions_text. Jeśli przy produkcie nie ma żadnej ceny w złotych, wpisz null.
 - old_price_text: cena przed obniżką (przekreślona / "cena poza promocją") lub null
 - discount_text: np. "-30%" lub null
 - unit_price_text: cena za jednostkę jak wydrukowano (np. "9,98 zł/kg") lub null

@@ -19,6 +19,18 @@ def test_parse_price(text, exp):
     assert parse_price(text) == exp
 
 
+def test_whole_zloty_prices():
+    from pipeline.normalize import whole_zloty_context
+    # Biedronka Home: "269 zł/szt." next to crossed-out "379" – an ice maker, not 2,69 zł
+    assert whole_zloty_context("269", "379", "domacnost")
+    assert parse_price("269", whole_zloty=True) == 269.0
+    assert parse_price("1499", whole_zloty=True) == 1499.0
+    # one price can only be whole zloty → so is the other one
+    assert whole_zloty_context("139", "299", "ostatni")
+    # food with superscript grosze stays as before
+    assert not whole_zloty_context("499", "699", "mlecne")
+
+
 @pytest.mark.parametrize("text,exp", [
     ("500 g", (0.5, "kg")), ("1 kg", (1.0, "kg")), ("1,5 l", (1.5, "l")),
     ("750 ml", (0.75, "l")), ("6 x 0,5 l", (3.0, "l")), ("3 x 200 g", (0.6, "kg")),

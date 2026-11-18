@@ -48,12 +48,14 @@ def _unit_info(u: str) -> tuple[float, str]:
 
 # ---------------------------------------------------------------- price
 
-def parse_price(text: str) -> float | None:
+def parse_price(text: str, whole_zloty: bool = False) -> float | None:
     """Parse a Polish price string to PLN, or None on garbage / out of range.
 
     Heuristic: a bare integer of 3-4 digits (no separator) that would be > 200
     as-is and does not end in "00" is read as zloty+grosze printed as
     superscript ("1299" -> 12.99, "499" -> 4.99). Values <= 200 stay as-is.
+    `whole_zloty`: the context says the price is in whole zloty (appliances
+    printed "269 zł/szt."), so bare integers are never divided.
     "N za X" gives the per-piece price X/N. Everything after "/" is ignored.
     """
     if not text:
@@ -73,7 +75,7 @@ def parse_price(text: str) -> float | None:
             return None
         return _check(_num(tok))
     val = float(tok)
-    if len(tok) in (3, 4) and val > 200 and not tok.endswith("00"):
+    if not whole_zloty and len(tok) in (3, 4) and val > 200 and not tok.endswith("00"):
         val = val / 100
     return _check(round(val, 2))
 
@@ -406,18 +408,41 @@ def looks_like_misread_percent(price: float, text: str | None) -> bool:
     return bool(text) and price == int(price) and f"{int(price)}%" in text.replace(" %", "%")
 
 
+_BARE_INT = re.compile(r"\s*(\d{2,4})\s*(?:zł|zl|pln)?\s*(?:/\s*szt\.?)?\s*", re.I)
+
+
+def whole_zloty_context(price_text: str | None, old_price_text: str | None, category: str) -> bool:
+    """True when bare integers in this offer are whole zloty, not "4⁹⁹" with superscript grosze.
+
+    Household goods / appliances (Biedronka Home, Lidl non-food) are priced in
+    whole zloty ("269 zł/szt."); and when one of the two prices is a bare
+    integer that can only be whole zloty (10–200, e.g. "139" next to "299"),
+    the other one is printed the same way.
+    """
+    if category == "domacnost":
+        return True
+    for t in (price_text, old_price_text):
+        m = _BARE_INT.fullmatch(t or "")
+        if m and 10 <= int(m.group(1)) <= 200 and any(
+                _BARE_INT.fullmatch(o or "") for o in (price_text, old_price_text) if o is not t):
+            return True
+    return False
+
+
 def normalize(raw: RawOffer, *, leaflet_id: str, store: str, page_no: int,
               valid_from: date, valid_to: date, page_image_url: str | None,
               source: PageSource, rate_czk_per_pln: float | None, idx: int) -> Offer | None:
     """Build an `Offer` from a `RawOffer`; None if the price cannot be parsed."""
-    price = parse_price(raw.price_text)
     name = _clean_name(raw.name)
+    category = normalize_category(raw.category, name)
+    whole = whole_zloty_context(raw.price_text, raw.old_price_text, category)
+    price = parse_price(raw.price_text, whole)
     if price is None or not name:
         return None
     cond_src = " ".join(t for t in (raw.conditions_text, raw.discount_text) if t)
     if looks_like_misread_percent(price, cond_src):
         return None
-    old = parse_price(raw.old_price_text) if raw.old_price_text else None
+    old = parse_price(raw.old_price_text, whole) if raw.old_price_text else None
     mechanic = None
     nth = _MB_ZL.search(cond_src) if cond_src else None
     if nth and old and old > price and abs(price - _num(nth.group(2))) < 0.01:
@@ -459,7 +484,7 @@ def normalize(raw: RawOffer, *, leaflet_id: str, store: str, page_no: int,
         discount_pct=disc, unit_price_pln=up, unit_price_unit=up_unit,
         price_czk=round(price * rate_czk_per_pln, 2) if rate_czk_per_pln else None,
         conditions=_with_mechanic(parse_conditions(raw.conditions_text, raw.price_text, raw.discount_text), mechanic),
-        category=normalize_category(raw.category, name),
+        category=category,
         valid_from=valid_from, valid_to=valid_to, bbox=normalize_bbox(raw.bbox),
         page_image_url=page_image_url, source=source, ean=raw.ean,
     )

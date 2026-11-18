@@ -9,7 +9,8 @@
   translate           optional: Czech names (cheap text model); not part of run, the web shows Polish names
   build               write public/data/*.json
   dates [--vision]    date banners of page sections ("czw.–sob. 12.11-14.11"), cheap model call
-  locate [--vision]   precise product tiles for the crops on the web, cheap model call
+  locate [--vision]   precise product tiles + photo boxes for the crops on the web, cheap model call
+  crops               cut a WebP per offer (data/media → public/media), no model call
   run [--vision]      all of the above
   verify              one leaflet per store: counts, sample offers, cost estimate
 """
@@ -83,11 +84,14 @@ def _normalize_page(con, lf: Leaflet, page_no: int, raws: list[RawOffer], source
     offers, own_texts = [], []
     for i, r in enumerate(raws):
         p = precise.get(i)
+        photo = None
         if p and p.get("name") == r.name and p.get("bbox"):
             r = r.model_copy(update={"bbox": p["bbox"]})
+            photo = p.get("photo")
         o = normalize(r, leaflet_id=lf.id, store=lf.store, page_no=page_no, valid_from=lf.valid_from,
                       valid_to=lf.valid_to, page_image_url=img, source=source, rate_czk_per_pln=rate, idx=i)
         if o:
+            o.photo_bbox = photo
             offers.append(o)
             own_texts.append(" ".join(filter(None, (r.conditions_text, r.discount_text))))
     drop_shared_bboxes(offers)
@@ -135,7 +139,8 @@ IMAGE_STORES = ("biedronka", "lidl", "kaufland")  # page images from the store A
 
 def cmd_locate(con, limit_pages: int = LOCATE_MAX_PAGES_PER_RUN) -> int:
     """Ask the model for precise product tiles on every current page that has
-    offers and no entry in page_boxes yet. Returns the number of pages done."""
+    offers and no entry in page_boxes yet – or an entry from before the product
+    photo boxes existed (no "photo" key). Returns the number of pages done."""
     from .extract.vision import VISION_MODEL
 
     boxes.ensure_schema(con)
@@ -144,7 +149,8 @@ def cmd_locate(con, limit_pages: int = LOCATE_MAX_PAGES_PER_RUN) -> int:
         "SELECT p.leaflet_id, p.page_no, p.raw_json FROM pages p "
         "JOIN leaflets l ON l.id = p.leaflet_id "
         "LEFT JOIN page_boxes b ON b.leaflet_id = p.leaflet_id AND b.page_no = p.page_no "
-        "WHERE l.valid_to >= ? AND b.leaflet_id IS NULL AND p.page_no > 0 "
+        "WHERE l.valid_to >= ? AND p.page_no > 0 "
+        "AND (b.leaflet_id IS NULL OR (b.boxes_json != '{}' AND b.boxes_json NOT LIKE '%\"photo\"%')) "
         "AND EXISTS (SELECT 1 FROM offers o WHERE o.leaflet_id = p.leaflet_id AND o.page_no = p.page_no) "
         "ORDER BY l.valid_from DESC, p.leaflet_id, p.page_no", (today,)).fetchall()
     done = 0
@@ -176,7 +182,7 @@ def cmd_locate(con, limit_pages: int = LOCATE_MAX_PAGES_PER_RUN) -> int:
         except Exception as e:
             print(f"[{lf.store}] locate failed p{page_no}: {e}", file=sys.stderr)
             continue
-        stored = {str(i - 1): {"name": raws[i - 1]["name"], "bbox": b} for i, b in found.items()}
+        stored = {str(i - 1): {"name": raws[i - 1]["name"], **b} for i, b in found.items()}
         con.execute("INSERT OR REPLACE INTO page_boxes (leaflet_id, page_no, boxes_json, model) VALUES (?,?,?,?)",
                     (lid, page_no, json.dumps(stored, ensure_ascii=False), VISION_MODEL))
         con.commit()
@@ -349,7 +355,7 @@ def cmd_verify(con) -> None:
 def main(argv: list[str] | None = None) -> None:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("command", choices=["discover", "fetch", "extract", "locate", "dates", "renormalize", "translate", "score",
-                                       "build", "run", "verify"])
+                                       "crops", "build", "run", "verify"])
     ap.add_argument("--vision", action="store_true", help="use the vision model where needed")
     ap.add_argument("--stores", nargs="*", help="limit discovery to these stores")
     ap.add_argument("--pdf", action="store_true", help="also download Lidl/Kaufland PDFs to the cache")
@@ -377,6 +383,9 @@ def main(argv: list[str] | None = None) -> None:
             print(f"translated {translate_names(con)} names")
         if a.command in ("score", "run"):
             print(f"scored {cmd_score(con)} offers")
+        if a.command in ("crops", "run"):
+            from .crops import make_crops
+            print("crops", make_crops(con))
         if a.command in ("build", "run"):
             print("built", build(con, czk_per_pln(con)))
 

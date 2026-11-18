@@ -65,6 +65,7 @@ CREATE TABLE IF NOT EXISTS offers (
   valid_from TEXT NOT NULL,
   valid_to TEXT NOT NULL,
   bbox TEXT,
+  photo_bbox TEXT,             -- product photo alone (no price tag) → image on the card
   page_image_url TEXT,
   source TEXT NOT NULL,
   score REAL,
@@ -202,6 +203,9 @@ _FIXES = Path(__file__).parent / "fixes" / "page_lists_2026-11-17.json"
 
 def migrate(con: sqlite3.Connection) -> None:
     """Idempotent schema/data migrations."""
+    if "photo_bbox" not in {r[1] for r in con.execute("PRAGMA table_info(offers)")}:
+        con.execute("ALTER TABLE offers ADD COLUMN photo_bbox TEXT")
+        con.commit()
     cols = {r[1] for r in con.execute("PRAGMA table_info(pages)")}
     if "image_url" in cols:
         return
@@ -228,9 +232,10 @@ def page_done(con: sqlite3.Connection, leaflet_id: str, page_no: int) -> bool:
 def replace_offers(con: sqlite3.Connection, leaflet_id: str, page_no: int, offers: list[Offer]) -> None:
     con.execute("DELETE FROM offers WHERE leaflet_id=? AND page_no=?", (leaflet_id, page_no))
     for o in offers:
-        d = o.model_dump(mode="json")
+        d = o.model_dump(mode="json", exclude={"image_url"})
         d["conditions"] = json.dumps(d["conditions"], ensure_ascii=False)
         d["bbox"] = json.dumps(d["bbox"]) if d["bbox"] else None
+        d["photo_bbox"] = json.dumps(d["photo_bbox"]) if d["photo_bbox"] else None
         cols = ",".join(d.keys())
         con.execute(f"INSERT INTO offers ({cols}) VALUES ({','.join('?' * len(d))})", list(d.values()))
 
@@ -239,6 +244,7 @@ def row_to_offer(row: sqlite3.Row) -> Offer:
     d = dict(row)
     d["conditions"] = json.loads(d["conditions"] or "{}")
     d["bbox"] = json.loads(d["bbox"]) if d["bbox"] else None
+    d["photo_bbox"] = json.loads(d["photo_bbox"]) if d.get("photo_bbox") else None
     return Offer(**d)
 
 

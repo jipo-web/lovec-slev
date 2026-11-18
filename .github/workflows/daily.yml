@@ -55,6 +55,15 @@ jobs:
             echo "no 'data' branch yet – starting with an empty database"
           fi
 
+      # Pre-cut product images (data/media) are reused between runs; only crops of
+      # new offers are cut. A new cache entry is saved after every run.
+      - name: Restore product crops
+        uses: actions/cache@v4
+        with:
+          path: data/media
+          key: media-${{ github.run_id }}
+          restore-keys: media-
+
       - name: Run pipeline
         env:
           VISION_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
@@ -94,7 +103,9 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: site-data
-          path: public/data/
+          path: |
+            public/data/
+            public/media/
           retention-days: 3
 
   pages:
@@ -109,7 +120,7 @@ jobs:
       - uses: actions/download-artifact@v4
         with:
           name: site-data
-          path: public/data/
+          path: public/
       - uses: actions/setup-node@v4
         with:
           node-version: 22
@@ -134,7 +145,7 @@ jobs:
       - uses: actions/download-artifact@v4
         with:
           name: site-data
-          path: public/data/
+          path: public/
       - uses: actions/setup-node@v4
         with:
           node-version: 22

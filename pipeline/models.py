@@ -112,6 +112,8 @@ class Offer(BaseModel):
     valid_from: date
     valid_to: date
     bbox: Optional[list[float]] = None
+    photo_bbox: Optional[list[float]] = None  # product photo alone, inside bbox
+    image_url: Optional[str] = None  # pre-cut WebP (set by build, not stored)
     page_image_url: Optional[str] = None
     source: PageSource = PageSource.vision
     score: Optional[float] = None

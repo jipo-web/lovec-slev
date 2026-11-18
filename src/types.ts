@@ -46,6 +46,8 @@ export interface DealItem {
   unitPricePln?: number | null;
   unitPriceUnit?: string | null;
   pageImageUrl?: string | null;
+  /** Pre-cut product image (media/…webp) */
+  imageUrl?: string | null;
   bbox?: [number, number, number, number] | null;
   leafletId?: string;
   source?: string;

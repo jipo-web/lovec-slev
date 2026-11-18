@@ -3,7 +3,7 @@
 The main extraction reads ~15 fields per offer and the box it returns along
 the way is often off: only the price tag, a neighbouring tile, or a sliver.
 This pass asks for nothing but the boxes of products we already know from the
-page, which models locate far more accurately (≈ 0.06 CZK per page with a
+page (the whole tile, and the product photo alone for the image on the card), which models locate far more accurately (≈ 0.06 CZK per page with a
 Flash-class model). Results are stored in `page_boxes` and override the box
 from the main extraction during normalisation.
 """
@@ -21,15 +21,18 @@ from ..config import VISION_API_KEY, VISION_BASE_URL, VISION_MODEL
 from .vision import _encode_image, box_2d_to_bbox
 
 PROMPT = """To jest strona polskiej gazetki promocyjnej. Poniżej lista produktów, które są na tej stronie.
-Dla KAŻDEGO produktu z listy znajdź jego kafelek i zwróć prostokąt box_2d = [ymin, xmin, ymax, xmax]
-w skali 0–1000, który obejmuje CAŁY kafelek: zdjęcie produktu, jego nazwę i cenę (etykietę cenową).
+Dla KAŻDEGO produktu z listy znajdź jego kafelek i zwróć dwa prostokąty [ymin, xmin, ymax, xmax] w skali 0–1000:
+- box_2d: CAŁY kafelek – zdjęcie produktu, jego nazwa i cena (etykieta cenowa),
+- photo_2d: TYLKO zdjęcie produktu (opakowanie / sam produkt), ciasno wokół niego, BEZ etykiety cenowej,
+  napisów, procentów, logo sklepu i tła sąsiednich produktów. Gdy cena zachodzi na zdjęcie, wybierz
+  największy fragment zdjęcia bez ceny. Jeśli kafelek nie ma zdjęcia produktu, photo_2d = null.
 Zasady:
-- prostokąt ma obejmować zdjęcie produktu, nie tylko cenę lub tekst,
+- box_2d ma obejmować zdjęcie produktu, nie tylko cenę lub tekst; photo_2d leży wewnątrz box_2d,
 - nie obejmuj sąsiednich produktów,
-- jeśli kilka produktów z listy dzieli jeden kafelek, mogą mieć ten sam prostokąt,
+- jeśli kilka produktów z listy dzieli jeden kafelek, mogą mieć te same prostokąty,
 - jeśli produktu nie widać na stronie, pomiń go.
 {hints}
-Odpowiedz wyłącznie JSON: {{"boxes": [{{"id": 1, "box_2d": [ymin, xmin, ymax, xmax]}}]}}
+Odpowiedz wyłącznie JSON: {{"boxes": [{{"id": 1, "box_2d": [ymin, xmin, ymax, xmax], "photo_2d": [ymin, xmin, ymax, xmax]}}]}}
 
 Produkty:
 {items}"""
@@ -38,7 +41,7 @@ _SCHEMA = """
 CREATE TABLE IF NOT EXISTS page_boxes (
   leaflet_id TEXT NOT NULL,
   page_no INTEGER NOT NULL,
-  boxes_json TEXT NOT NULL,        -- {"<raw index>": {"name": "...", "bbox": [x0,y0,x1,y1]}}
+  boxes_json TEXT NOT NULL,        -- {"<raw index>": {"name": "...", "bbox": [x0,y0,x1,y1], "photo": [..] | null}}
   model TEXT,
   created_at TEXT NOT NULL DEFAULT (datetime('now')),
   PRIMARY KEY (leaflet_id, page_no)
@@ -88,7 +91,13 @@ def _items(content: str) -> list:
 
 
 def parse_answer(content: str, ids: set[int]) -> dict[int, list[float]]:
-    out: dict[int, list[float]] = {}
+    """Tile boxes only (id → [x0, y0, x1, y1])."""
+    return {i: v["bbox"] for i, v in parse_boxes(content, ids).items()}
+
+
+def parse_boxes(content: str, ids: set[int]) -> dict[int, dict]:
+    """id → {"bbox": tile, "photo": product photo inside the tile or None}."""
+    out: dict[int, dict] = {}
     for it in _items(content):
         if not isinstance(it, dict):
             continue
@@ -98,8 +107,24 @@ def parse_answer(content: str, ids: set[int]) -> dict[int, list[float]]:
             continue
         b = box_2d_to_bbox(it.get("box_2d"))
         if i in ids and b and plausible_tile(b):
-            out[i] = b
+            out[i] = {"bbox": b, "photo": plausible_photo(box_2d_to_bbox(it.get("photo_2d")), b)}
     return out
+
+
+def plausible_photo(p: list[float] | None, tile: list[float]) -> list[float] | None:
+    """The photo must be a real area, mostly inside its tile and not the whole tile's text strip."""
+    if not p:
+        return None
+    w, h = p[2] - p[0], p[3] - p[1]
+    if w < 0.025 or h < 0.02:
+        return None
+    ix = max(0.0, min(p[2], tile[2]) - max(p[0], tile[0]))
+    iy = max(0.0, min(p[3], tile[3]) - max(p[1], tile[1]))
+    if ix * iy < 0.75 * w * h:
+        return None
+    # clamp to the tile so a sloppy edge doesn't pull in the neighbour
+    return [round(max(p[0], tile[0]), 4), round(max(p[1], tile[1]), 4),
+            round(min(p[2], tile[2]), 4), round(min(p[3], tile[3]), 4)]
 
 
 def plausible_tile(b: list[float]) -> bool:
@@ -107,7 +132,7 @@ def plausible_tile(b: list[float]) -> bool:
     return 0.05 <= w <= 1.0 and 0.04 <= h <= 1.0 and w * h <= 0.7
 
 
-def locate(path: Path, products: list[dict], *, model: str = VISION_MODEL) -> dict[int, list[float]]:
+def locate(path: Path, products: list[dict], *, model: str = VISION_MODEL) -> dict[int, dict]:
     if not VISION_API_KEY:
         raise RuntimeError("VISION_API_KEY / OPENROUTER_API_KEY is not set")
     body = {
@@ -128,4 +153,4 @@ def locate(path: Path, products: list[dict], *, model: str = VISION_MODEL) -> di
             continue
         break
     r.raise_for_status()
-    return parse_answer(r.json()["choices"][0]["message"]["content"], {p["id"] for p in products})
+    return parse_boxes(r.json()["choices"][0]["message"]["content"], {p["id"] for p in products})

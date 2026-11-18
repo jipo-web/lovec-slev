@@ -6,6 +6,7 @@ import sqlite3
 from datetime import date, datetime, timedelta, timezone
 
 from .config import OUT_DIR
+from .crops import offer_images, publish
 from .db import all_offers, row_to_leaflet
 
 
@@ -20,6 +21,10 @@ def build(con: sqlite3.Connection, rate: float, today: date | None = None, horiz
 
     offers = all_offers(con, "valid_to>=? AND valid_from<=?", (today.isoformat(), until))
     offers.sort(key=lambda o: (-(o.score or -9), o.store, o.page_no))
+    images = offer_images(con)
+    for o in offers:
+        o.image_url = images.get(o.id)
+    publish({o.image_url for o in offers if o.image_url})
     offers_json = {"generated_at": _now(), "rate_czk_per_pln": round(rate, 4),
                    "offers": [o.model_dump(mode="json") for o in offers]}
     (OUT_DIR / "offers-latest.json").write_text(json.dumps(offers_json, ensure_ascii=False), encoding="utf-8")
@@ -58,4 +63,4 @@ def build(con: sqlite3.Connection, rate: float, today: date | None = None, horiz
 
     (OUT_DIR / "leaflets.json").write_text(
         json.dumps({"generated_at": _now(), "leaflets": leaflets}, ensure_ascii=False), encoding="utf-8")
-    return {"offers": len(offers), "leaflets": len(leaflets), "group_promos": len(promos)}
+    return {"offers": len(offers), "images": sum(1 for o in offers if o.image_url), "leaflets": len(leaflets), "group_promos": len(promos)}

@@ -330,6 +330,7 @@ def drop_shared_bboxes(offers: list) -> None:
                 bad.update((i, j))
     for i in bad:
         offers[i].bbox = None
+        offers[i].photo_bbox = None
 
 
 # ------------------------------------------------------------ matching

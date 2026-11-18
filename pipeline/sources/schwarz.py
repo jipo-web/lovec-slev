@@ -74,6 +74,8 @@ def to_leaflet(store: str, flyer: dict) -> Leaflet:
             # keyWords is the page's text dump – useful as a cheap sanity check
             "page_keywords": [p.get("keyWords") or "" for p in pages],
             "products": list((flyer.get("products") or {}).values()),
+            # 2400 px version of each page image – sharper product crops on the web
+            "zoom_urls": {p["image"]: p["zoom"] for p in pages if p.get("image") and p.get("zoom")},
         },
     )
 

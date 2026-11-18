@@ -81,7 +81,7 @@ export const DealDetailModal: React.FC<DealDetailModalProps> = ({
 
         {/* Content */}
         <div className="p-6 overflow-y-auto space-y-6 text-sm">
-          {/* Flyer crop */}
+          {/* The tile as printed in the flyer (with its price tag) – the card shows just the product */}
           {hasCropData(deal.pageImageUrl, deal.bbox) && (
             <div className="rounded-2xl overflow-hidden border border-slate-200 dark:border-slate-700">
               <FlyerCrop pageImageUrl={deal.pageImageUrl} bbox={deal.bbox} alt={deal.title} heightClass="h-72" />

@@ -42,6 +42,14 @@ python -m pytest -q
 Rozpočet: první běh ~450 stránek, dál ~250–300 stránek týdně ≈ 15–30 Kč/měsíc s Gemini Flash.
 Nedokončený leták (vyčerpaný rozpočet, chyba sítě) zůstane ve stavu `fetched` a dojede příští den.
 
+### Obrázky zboží
+Průchod `locate` vrací dva rámečky: celou dlaždici (cenovka, text) a jen fotku produktu.
+Krok `crops` z nich vyřízne WebP (max. 520 px, ~15 kB) z nejostřejší verze stránky
+(Lidl/Kaufland „zoom“ 2400 px) do `data/media/` a `build` zkopíruje použité do `public/media/`.
+Karta ukazuje fotku zboží, detail nabídky dlaždici tak, jak je v letáku. Bez fotky se vyřízne
+dlaždice; bez souboru web ořízne stránku v prohlížeči jako dřív. Ve workflow drží `data/media`
+mezi běhy cache, takže se řežou jen nové nabídky.
+
 ## Hodnocení
 
 `score` = 50 % sleva vs. medián ceny téhož produktu za 8 týdnů (všechny řetězce)

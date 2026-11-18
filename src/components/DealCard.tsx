@@ -1,7 +1,7 @@
 import React from 'react';
 import { DealItem, Verdict } from '../types';
 import { STORES } from '../data/stores';
-import { FlyerCrop } from './FlyerCrop';
+import { ProductImage } from './ProductImage';
 import { formatCzk, formatNum2, discountPct, MIN_VISIBLE_DISCOUNT_PCT, validityInfo } from '../utils/format';
 import { Plus, Minus, ShieldCheck, AlertTriangle, AlertCircle, BookOpen, Flame, CalendarClock } from 'lucide-react';
 
@@ -129,13 +129,19 @@ export const DealCard: React.FC<DealCardProps> = ({
         )}
       </div>
 
-      {/* Flyer crop (always rendered so cards keep a uniform layout) */}
+      {/* Product image (always rendered so cards keep a uniform layout) */}
       <button
         onClick={() => onOpenTrickModal(deal)}
         className="block w-full border-b border-slate-100 dark:border-slate-800"
         title="Zobrazit detail a rozbor akce"
       >
-        <FlyerCrop pageImageUrl={deal.pageImageUrl} bbox={deal.bbox} alt={deal.title} heightClass="h-40" />
+        <ProductImage
+          imageUrl={deal.imageUrl}
+          pageImageUrl={deal.pageImageUrl}
+          bbox={deal.bbox}
+          alt={deal.title}
+          heightClass="h-40"
+        />
       </button>
 
       {/* Title & badges */}

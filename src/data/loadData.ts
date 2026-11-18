@@ -31,6 +31,7 @@ export interface PipelineOffer {
   valid_from: string;
   valid_to: string;
   bbox: [number, number, number, number] | null;
+  image_url?: string | null;
   page_image_url: string | null;
   source: string;
   score: number | null;
@@ -144,6 +145,7 @@ export function offerToDealItem(o: PipelineOffer, _rate: number): DealItem {
     unitPricePln: o.unit_price_pln,
     unitPriceUnit: o.unit_price_unit,
     pageImageUrl: o.page_image_url,
+    imageUrl: o.image_url ?? null,
     bbox: o.bbox,
     leafletId: o.leaflet_id,
     source: o.source,

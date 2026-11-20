@@ -1,10 +1,17 @@
 import React, { useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { copyText, whatsappUrl, smsUrl, nativeShare, canNativeShare } from '../utils/share';
 import { formatNum2 } from '../utils/format';
 import { linePrice } from '../utils/pricing';
 import { CartItem, CustomCartItem, StoreId } from '../types';
 import { STORES } from '../data/stores';
-import { X, Plus, Minus, Trash2, Copy, Check, ShoppingBag, Smartphone, MessageCircle, MessageSquare, Share2, AlertTriangle } from 'lucide-react';
+import { X, Plus, Minus, Trash2, Copy, Check, ShoppingBag, Smartphone, MessageCircle, MessageSquare, Share2, AlertTriangle, Printer, ListChecks } from 'lucide-react';
+
+const KEEP_URL = 'https://keep.google.com/';
+
+/** Phone or tablet: the share sheet offers Google Keep directly. */
+const isTouchDevice = (): boolean =>
+  typeof window !== 'undefined' && window.matchMedia?.('(pointer: coarse)').matches;
 
 function itemsLabel(n: number): string {
   return `${n} ${n === 1 ? 'položka' : n >= 2 && n <= 4 ? 'položky' : 'položek'}`;
@@ -39,6 +46,7 @@ export const ShoppingListDrawer: React.FC<ShoppingListDrawerProps> = ({
   const [newCustomPrice, setNewCustomPrice] = useState('');
   const [copiedSuccess, setCopiedSuccess] = useState(false);
   const [manualCopyText, setManualCopyText] = useState<string | null>(null);
+  const [keepHint, setKeepHint] = useState<'copied' | 'manual' | null>(null);
   const manualRef = useRef<HTMLTextAreaElement>(null);
 
   if (!isOpen) return null;
@@ -142,6 +150,55 @@ export const ShoppingListDrawer: React.FC<ShoppingListDrawerProps> = ({
       setManualCopyText(text);
       setTimeout(() => manualRef.current?.select(), 50);
     }
+  };
+
+  // Items sorted by store – the order you walk the shops in
+  const cartByStore = [...cart].sort((a, b) => STORES[a.deal.store].name.localeCompare(STORES[b.deal.store].name, 'cs'));
+
+  /**
+   * One line per item, nothing else: Google Keep turns every line into a
+   * checkbox ("Zobrazit zaškrtávací políčka"), so totals and headers stay out.
+   */
+  const buildKeepText = (): string => {
+    const lines = cartByStore.map(({ deal, quantity }) => {
+      const line = lineOf(deal.id);
+      const cond: string[] = [];
+      if (deal.requiredCard) cond.push(`s ${deal.requiredCard}`);
+      if (deal.minQuantity && deal.minQuantity > 1) cond.push(`od ${deal.minQuantity} ks`);
+      if (deal.maxQuantity) cond.push(`max. ${deal.maxQuantity} ks`);
+      const extra = cond.length ? ` (${cond.join(', ')})` : '';
+      return `${quantity}× ${deal.title} – ${STORES[deal.store].name} – ${formatNum2(line.totalPln)} zł${extra}`;
+    });
+    customItems.forEach((ci) => {
+      const price = ci.estimatedPricePln > 0 ? ` – ~${formatNum2(ci.estimatedPricePln * ci.quantity)} zł` : '';
+      lines.push(`${ci.quantity}× ${ci.title}${price}`);
+    });
+    return lines.join('\n');
+  };
+
+  const keepTitle = `Nákup v Polsku – ${formatNum2(totalPln)} zł (≈ ${Math.round(totalCzk)} Kč)`;
+
+  const handleKeep = async () => {
+    const text = buildKeepText();
+    // Phones: the system share sheet lists Keep; the title becomes the note title.
+    if (isTouchDevice() && canNativeShare()) {
+      await nativeShare(text, keepTitle);
+      return;
+    }
+    // Desktop: Keep has no public "create note" link – copy and open Keep.
+    if (await copyText(text)) {
+      setKeepHint('copied');
+    } else {
+      setManualCopyText(text);
+      setKeepHint('manual');
+      setTimeout(() => manualRef.current?.select(), 50);
+    }
+    window.open(KEEP_URL, '_blank', 'noopener');
+  };
+
+  const handlePrint = () => {
+    setKeepHint(null);
+    window.print();
   };
 
   const handleShare = async () => {
@@ -420,6 +477,23 @@ export const ShoppingListDrawer: React.FC<ShoppingListDrawerProps> = ({
           </div>
         </div>
 
+        {keepHint && (
+          <div role="status" className="px-5 py-3 border-t border-amber-200 dark:border-amber-800 bg-amber-50 dark:bg-amber-950/30 text-xs text-amber-900 dark:text-amber-200 flex items-start gap-2">
+            <ListChecks className="w-4 h-4 shrink-0 mt-0.5" aria-hidden="true" />
+            <div className="flex-1">
+              <strong>{keepHint === 'copied' ? 'Seznam je zkopírovaný.' : 'Zkopírujte seznam níže.'}</strong> V Google Keep
+              (otevřel se v nové kartě) založte poznámku, vložte text (Ctrl+V) a v nabídce ⋮ zvolte{' '}
+              <em>Zobrazit zaškrtávací políčka</em> – každý řádek bude jedna položka k odškrtnutí.{' '}
+              <a href={KEEP_URL} target="_blank" rel="noopener noreferrer" className="underline font-semibold">
+                Otevřít Keep
+              </a>
+            </div>
+            <button onClick={() => setKeepHint(null)} className="text-slate-500 hover:text-slate-800" aria-label="Zavřít nápovědu">
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+        )}
+
         {/* Manual copy fallback when the browser blocks the clipboard */}
         {manualCopyText && (
           <div className="px-5 pt-4 border-t border-slate-200 dark:border-slate-800 bg-amber-50 dark:bg-amber-950/30">
@@ -464,6 +538,24 @@ export const ShoppingListDrawer: React.FC<ShoppingListDrawerProps> = ({
                 </>
               )}
             </button>
+            <button
+              onClick={handleKeep}
+              disabled={cart.length + customItems.length === 0}
+              className="flex-1 sm:flex-none flex items-center justify-center gap-2 py-2.5 px-4 rounded-xl bg-amber-400 hover:bg-amber-500 text-slate-900 text-xs font-bold transition-all disabled:opacity-50"
+              title="Odškrtávací seznam v Google Keep"
+            >
+              <ListChecks className="w-4 h-4" />
+              <span>Google Keep</span>
+            </button>
+            <button
+              onClick={handlePrint}
+              disabled={cart.length + customItems.length === 0}
+              className="flex-1 sm:flex-none flex items-center justify-center gap-2 py-2.5 px-4 rounded-xl border border-slate-300 dark:border-slate-600 text-slate-700 dark:text-slate-200 text-xs font-bold transition-all disabled:opacity-50"
+              title="Vytisknout seznam se zaškrtávacími políčky"
+            >
+              <Printer className="w-4 h-4" />
+              <span>Tisk</span>
+            </button>
             <a
               href={whatsappUrl(buildShoppingListText())}
               target="_blank"
@@ -495,6 +587,83 @@ export const ShoppingListDrawer: React.FC<ShoppingListDrawerProps> = ({
           </div>
         </div>
       </div>
+
+      {/* Printable list – hidden on screen, the only thing on paper */}
+      {createPortal(
+        <div className="print-only" lang="cs">
+          <h1>Nákupní seznam do Polska</h1>
+          <p className="print-meta">
+            lovec-slev.cz · vytištěno {new Date().toLocaleDateString('cs-CZ')} · kurz 1 zł = {formatNum2(exchangeRate)} Kč
+          </p>
+          {(Object.keys(STORES) as StoreId[])
+            .filter((sid) => cart.some((i) => i.deal.store === sid))
+            .map((sid) => (
+              <section key={sid}>
+                <h2>
+                  {STORES[sid].name}
+                  {STORES[sid].loyaltyCardName && cart.some((i) => i.deal.store === sid && i.deal.requiredCard)
+                    ? ` – vzít ${STORES[sid].loyaltyCardName}`
+                    : ''}
+                </h2>
+                <ul>
+                  {cart
+                    .filter((i) => i.deal.store === sid)
+                    .map(({ deal, quantity }) => {
+                      const line = lineOf(deal.id);
+                      return (
+                        <li key={deal.id}>
+                          <span className="box" aria-hidden="true" />
+                          <span className="qty">{quantity}×</span>
+                          <span className="name">
+                            {deal.title}
+                            {deal.packageSize && <small> {deal.packageSize}</small>}
+                            {(deal.requiredCard || line.notes.length > 0 || (deal.minQuantity ?? 0) > 1) && (
+                              <small className="cond">
+                                {[
+                                  deal.requiredCard ? `jen s ${deal.requiredCard}` : '',
+                                  (deal.minQuantity ?? 0) > 1 ? `akce od ${deal.minQuantity} ks` : '',
+                                  deal.maxQuantity ? `max. ${deal.maxQuantity} ks` : '',
+                                  ...line.notes,
+                                ]
+                                  .filter(Boolean)
+                                  .join(' · ')}
+                              </small>
+                            )}
+                          </span>
+                          <span className="price">
+                            {formatNum2(line.totalPln)} zł
+                            <small>≈ {Math.round(line.totalPln * exchangeRate)} Kč</small>
+                          </span>
+                        </li>
+                      );
+                    })}
+                </ul>
+              </section>
+            ))}
+          {customItems.length > 0 && (
+            <section>
+              <h2>Další nákup</h2>
+              <ul>
+                {customItems.map((ci) => (
+                  <li key={ci.id}>
+                    <span className="box" aria-hidden="true" />
+                    <span className="qty">{ci.quantity}×</span>
+                    <span className="name">{ci.title}</span>
+                    <span className="price">
+                      {ci.estimatedPricePln > 0 ? `~${formatNum2(ci.estimatedPricePln * ci.quantity)} zł` : ''}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            </section>
+          )}
+          <p className="print-total">
+            Celkem: {formatNum2(totalPln)} zł (≈ {Math.round(totalCzk)} Kč)
+          </p>
+          <p className="print-meta">Na terminálu plaťte v PLN (zlotých), ne v Kč.</p>
+        </div>,
+        document.body
+      )}
     </div>
   );
 };

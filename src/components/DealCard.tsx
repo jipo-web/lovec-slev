@@ -46,7 +46,7 @@ interface DealCardProps {
   onOpenFlyerPage?: (deal: DealItem) => void;
   /** Rank 1..n when the card is part of the "top deals" strip. */
   topRank?: number;
-  /** Day the user is browsing (ISO); used for "končí dnes". */
+  /** Day the user is browsing (ISO); used for "končí so 21. 11.". */
   selectedDay?: string;
 }
 

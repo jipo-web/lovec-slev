@@ -42,13 +42,13 @@ function dayLabel(d: Date): string {
 export interface ValidityInfo {
   /** "po 16. 11. – so 21. 11." or "jen po 16. 11." */
   label: string;
-  /** "končí dnes" / "končí zítra" / "od zítra" … or null */
+  /** "končí so 21. 11." / "od ne 22. 11." … or null */
   urgency: string | null;
   /** Short promotion (≤ 3 days) or ending today/tomorrow – worth highlighting */
   highlight: boolean;
 }
 
-/** Human validity of an offer relative to `today` (ISO day, defaults to now). */
+/** Human validity of an offer relative to `today` (ISO day, defaults to now – the day the user browses). */
 export function validityInfo(validFrom: string, validUntil: string, today?: string): ValidityInfo {
   const a = parseIsoDay(validFrom);
   const b = parseIsoDay(validUntil);
@@ -58,10 +58,10 @@ export function validityInfo(validFrom: string, validUntil: string, today?: stri
   const toStart = Math.round((a.getTime() - t.getTime()) / 86400000);
 
   const label = days === 1 ? `jen ${dayLabel(a)}` : `${dayLabel(a)} – ${dayLabel(b)}`;
+  // Always a concrete date: the user may browse another day than today, so
+  // "dnes"/"zítra" relative to the selected day would be misleading.
   let urgency: string | null = null;
-  if (toStart === 1) urgency = 'od zítra';
-  else if (toStart > 1) urgency = `od ${dayLabel(a)}`;
-  else if (toEnd === 0) urgency = 'končí dnes';
-  else if (toEnd === 1) urgency = 'končí zítra';
+  if (toStart >= 1) urgency = `od ${dayLabel(a)}`;
+  else if (toEnd === 0 || toEnd === 1) urgency = `končí ${dayLabel(b)}`;
   return { label, urgency, highlight: days <= 3 || (toStart <= 0 && toEnd <= 1) };
 }

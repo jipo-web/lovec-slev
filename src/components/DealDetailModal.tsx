@@ -3,6 +3,7 @@ import { DealItem } from '../types';
 import { STORES } from '../data/stores';
 import { FlyerCrop, hasCropData } from './FlyerCrop';
 import { formatCzk, formatNum2, discountPct, MIN_VISIBLE_DISCOUNT_PCT, validityInfo } from '../utils/format';
+import { czechComparison } from '../utils/czech';
 import { X, ShieldCheck, AlertTriangle, AlertCircle, ShoppingBag, Calendar, Store, Check, BookOpen } from 'lucide-react';
 
 interface DealDetailModalProps {
@@ -29,9 +30,8 @@ export const DealDetailModal: React.FC<DealDetailModalProps> = ({
   const store = STORES[deal.store];
   const promoCzk = deal.promoPricePln * exchangeRate;
   const regularCzk = deal.regularPricePln * exchangeRate;
-  const hasCzPrice = deal.czechEquivalentCzk > 0;
-  const savingsVsCzCzk = hasCzPrice ? Math.max(0, deal.czechEquivalentCzk - promoCzk) : 0;
-  const savingsVsCzPct = hasCzPrice ? Math.round((savingsVsCzCzk / deal.czechEquivalentCzk) * 100) : 0;
+  const cz = czechComparison(deal, exchangeRate);
+  const ref = deal.czRef;
   const pct = discountPct(deal.promoPricePln, deal.regularPricePln);
   const showDiscount = pct != null && pct >= MIN_VISIBLE_DISCOUNT_PCT;
   const showPolishTitle = deal.polishTitle.trim().toLowerCase() !== deal.title.trim().toLowerCase();
@@ -174,23 +174,54 @@ export const DealDetailModal: React.FC<DealDetailModalProps> = ({
               )}
             </div>
 
-            {hasCzPrice && (
-            <div className="p-3.5 rounded-2xl bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-800/60">
-              <span className="text-[11px] font-medium text-emerald-700 dark:text-emerald-400 block mb-1">
-                Srovnání s běžnou cenou v ČR
+            {cz && ref && (
+            <div
+              className={`p-3.5 rounded-2xl border ${
+                cz.tone === 'cheaper'
+                  ? 'bg-emerald-50 dark:bg-emerald-950/30 border-emerald-200 dark:border-emerald-800/60'
+                  : 'bg-slate-50 dark:bg-slate-800/80 border-slate-200 dark:border-slate-700'
+              }`}
+            >
+              <span className="text-[11px] font-medium text-slate-600 dark:text-slate-400 block mb-1">
+                Nejlevnější akce v ČR ({ref.type})
               </span>
               <div className="text-xl font-black text-slate-800 dark:text-slate-100 font-mono tabular-nums">
-                ~{formatCzk(deal.czechEquivalentCzk)}
+                {formatNum2(ref.unitPriceCzk)} Kč/{ref.unit}
               </div>
-              <div className="text-xs font-bold text-emerald-600 dark:text-emerald-400 font-mono mt-0.5">
-                Úspora: {formatCzk(savingsVsCzCzk)} (-{savingsVsCzPct} %)
+              <div
+                className={`text-xs font-bold mt-0.5 ${
+                  cz.tone === 'cheaper'
+                    ? 'text-emerald-700 dark:text-emerald-400'
+                    : cz.tone === 'dearer'
+                      ? 'text-rose-700 dark:text-rose-400'
+                      : 'text-slate-700 dark:text-slate-300'
+                }`}
+              >
+                {cz.verdict} (tady {formatNum2((deal.unitPricePln ?? 0) * exchangeRate)} Kč/{ref.unit})
               </div>
-              <div className="text-[11px] text-emerald-700/80 dark:text-emerald-400/80 font-mono mt-1">
-                na 1 balení / měrnou jednotku
+              <div className="text-[11px] text-slate-600 dark:text-slate-400 mt-1">
+                {ref.chain}: {ref.name}
+                {ref.pack && !ref.pack.startsWith('cena za') ? `, ${ref.pack}` : ''}
               </div>
             </div>
             )}
           </div>
+
+          {cz && ref && (
+            <p className="-mt-2 text-[11px] text-slate-600 dark:text-slate-400 leading-relaxed">
+              Srovnáváme druh zboží, ne stejnou značku: cenu za {ref.unit} s nejlevnější českou akcí pro všechny (bez karty a
+              vícekusových akcí) v podobném balení. Zdroj:{' '}
+              <a
+                href={ref.url ?? 'https://ojeb.cz/'}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="underline underline-offset-2 hover:text-slate-900 dark:hover:text-white"
+              >
+                ojeb.cz
+              </a>
+              .
+            </p>
+          )}
 
           {/* Store App & Loyalty requirement checklist */}
           <div className="p-4 rounded-2xl bg-slate-100/70 dark:bg-slate-800/40 border border-slate-200 dark:border-slate-700 space-y-2 text-xs">

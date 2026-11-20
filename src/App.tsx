@@ -720,10 +720,21 @@ export default function App() {
             <LogoMark className="w-5 h-5 shrink-0 text-slate-800 dark:text-white" />
             <span><span className="font-bold text-slate-800 dark:text-white">Lovec-slev.cz</span> · Nezávislý srovnávač polských akčních letáků a hlídač chytáků pro české nakupující.</span>
           </div>
-          <div className="flex items-center gap-4 text-[11px]">
+          <div className="flex flex-wrap items-center justify-center gap-x-4 gap-y-1 text-[11px]">
             <span>Sledujeme: Biedronka · Dino · Lidl · Kaufland</span>
             <span>·</span>
             <span>Kurz: 1 PLN = {exchangeRate} Kč</span>
+            {hasCzechPrices && (
+              <>
+                <span>·</span>
+                <span>
+                  České ceny:{' '}
+                  <a href="https://ojeb.cz/" target="_blank" rel="noopener noreferrer" className="underline underline-offset-2">
+                    ojeb.cz
+                  </a>
+                </span>
+              </>
+            )}
           </div>
         </div>
       </footer>

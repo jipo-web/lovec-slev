@@ -1,4 +1,4 @@
-import { CategoryId, DealItem, StoreId, TrickType, Verdict } from '../types';
+import { CategoryId, CzechReference, DealItem, StoreId, TrickType, Verdict } from '../types';
 
 export interface PipelineConditions {
   app_only: boolean;
@@ -38,6 +38,16 @@ export interface PipelineOffer {
   verdict: Verdict | null;
   reason: string | null;
   ean: string | null;
+  cz_ref?: {
+    type: string;
+    unit: string;
+    unit_price_czk: number;
+    chain: string;
+    name: string;
+    pack: string | null;
+    url: string | null;
+    valid_to: string | null;
+  } | null;
 }
 
 export interface OffersFile {
@@ -119,6 +129,22 @@ export function offerToDealItem(o: PipelineOffer, _rate: number): DealItem {
 
   // A limit below the minimum purchase is a misread – show neither number as a limit.
   const maxQty = cond?.max_qty && !(cond.min_qty && cond.max_qty < cond.min_qty) ? cond.max_qty : undefined;
+  const czRef: CzechReference | null = o.cz_ref
+    ? {
+        type: o.cz_ref.type,
+        unit: o.cz_ref.unit,
+        unitPriceCzk: o.cz_ref.unit_price_czk,
+        chain: o.cz_ref.chain,
+        name: o.cz_ref.name,
+        pack: o.cz_ref.pack,
+        url: o.cz_ref.url,
+        validTo: o.cz_ref.valid_to,
+      }
+    : null;
+  // Czech price of the same amount as this Polish pack (pack = price / unit price)
+  const czechEquivalentCzk =
+    czRef && o.unit_price_pln ? Math.round(czRef.unitPriceCzk * (o.price_pln / o.unit_price_pln) * 100) / 100 : 0;
+
   const promoInBundles =
     !!cond?.multibuy && /\d\s*\+\s*\d|zdarma|gratis|\d\.\s*kus|drug|trzec|czwart/i.test(cond.text ?? '');
 
@@ -131,7 +157,8 @@ export function offerToDealItem(o: PipelineOffer, _rate: number): DealItem {
     category: CATEGORY_MAP[o.category] ?? 'trvanlive',
     promoPricePln: o.price_pln,
     regularPricePln: o.old_price_pln ?? o.price_pln,
-    czechEquivalentCzk: 0,
+    czechEquivalentCzk,
+    czRef,
     unit: o.unit_price_unit ? `${o.unit_price_unit}` : 'ks',
     packageSize: o.quantity_text ?? '',
     trickType,

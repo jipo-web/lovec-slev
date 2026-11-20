@@ -7,6 +7,7 @@
   score               product matching + scoring for offers valid today or later
   renormalize         re-run normalisation on stored model output (free)
   translate           optional: Czech names (cheap text model); not part of run, the web shows Polish names
+  czprices            Czech reference prices from ojeb.cz
   build               write public/data/*.json
   dates [--vision]    date banners of page sections ("czw.–sob. 12.11-14.11"), cheap model call
   locate [--vision]   precise product tiles + photo boxes for the crops on the web, cheap model call
@@ -355,7 +356,7 @@ def cmd_verify(con) -> None:
 def main(argv: list[str] | None = None) -> None:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("command", choices=["discover", "fetch", "extract", "locate", "dates", "renormalize", "translate", "score",
-                                       "crops", "build", "run", "verify"])
+                                       "crops", "czprices", "build", "run", "verify"])
     ap.add_argument("--vision", action="store_true", help="use the vision model where needed")
     ap.add_argument("--stores", nargs="*", help="limit discovery to these stores")
     ap.add_argument("--pdf", action="store_true", help="also download Lidl/Kaufland PDFs to the cache")
@@ -383,6 +384,12 @@ def main(argv: list[str] | None = None) -> None:
             print(f"translated {translate_names(con)} names")
         if a.command in ("score", "run"):
             print(f"scored {cmd_score(con)} offers")
+        if a.command in ("czprices", "run"):  # Czech reference prices (ojeb.cz public API)
+            from .czprices import fetch_cz_prices
+            try:
+                print("czprices", fetch_cz_prices(con))
+            except Exception as e:  # never block the leaflets on the comparison
+                print("czprices failed:", e)
         if a.command in ("crops", "run"):
             from .crops import make_crops
             print("crops", make_crops(con))

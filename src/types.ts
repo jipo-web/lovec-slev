@@ -17,6 +17,18 @@ export type CategoryId =
   | 'sladkosti'
   | 'ovoce_zelenina';
 
+/** Cheapest current Czech promotion for the same kind of goods (source: ojeb.cz). */
+export interface CzechReference {
+  type: string;
+  unit: string;
+  unitPriceCzk: number;
+  chain: string;
+  name: string;
+  pack: string | null;
+  url: string | null;
+  validTo: string | null;
+}
+
 export interface DealItem {
   id: string;
   store: StoreId;
@@ -53,6 +65,7 @@ export interface DealItem {
   /** Pre-cut product image (media/…webp) */
   imageUrl?: string | null;
   bbox?: [number, number, number, number] | null;
+  czRef?: CzechReference | null;
   leafletId?: string;
   source?: string;
 }

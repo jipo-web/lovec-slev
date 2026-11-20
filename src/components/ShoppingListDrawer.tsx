@@ -122,7 +122,7 @@ export const ShoppingListDrawer: React.FC<ShoppingListDrawerProps> = ({
     text += `-------------------------\n`;
     text += `CELKEM: ${formatNum2(totalPln)} zł (cca ${Math.round(totalCzk)} Kč)\n`;
     if (totalSavedCzk > 0) {
-      text += `ODHADOVANÁ ÚSPORA OPROTI ČR: ${Math.round(totalSavedCzk)} Kč (-${totalSavedPct} %)\n\n`;
+      text += `ÚSPORA PROTI AKCÍM V ČR (orientačně, ojeb.cz): ${Math.round(totalSavedCzk)} Kč (-${totalSavedPct} %)\n\n`;
     }
 
     if (neededApps.length > 0) {
@@ -258,12 +258,14 @@ export const ShoppingListDrawer: React.FC<ShoppingListDrawerProps> = ({
 
             {dealsTotalCzCzk > 0 && (
             <div className="border-l border-white/10 pl-4">
-              <span className="text-xs text-emerald-400 block font-medium">Úspora vs nákup v ČR:</span>
+              <span className="text-xs text-emerald-400 block font-medium">
+                Proti akcím v ČR{czPriced.length < cart.length ? ` (${czPriced.length} z ${cart.length} položek)` : ''}:
+              </span>
               <div className="text-2xl font-black text-emerald-400 font-mono tabular-nums">
                 +{Math.round(totalSavedCzk)} <span className="text-sm font-normal">Kč</span>
               </div>
               <div className="text-xs text-slate-300 font-mono mt-0.5">
-                Ušetříte cca {totalSavedPct} % rozpočtu
+                orientačně −{totalSavedPct} % · zdroj ojeb.cz
               </div>
             </div>
             )}

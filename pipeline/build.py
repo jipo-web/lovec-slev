@@ -7,6 +7,7 @@ from datetime import date, datetime, timedelta, timezone
 
 from .config import OUT_DIR
 from .crops import offer_images, publish
+from .czprices import cz_reference, load_cz_prices
 from .db import all_offers, row_to_leaflet
 
 
@@ -52,8 +53,15 @@ def build(con: sqlite3.Connection, rate: float, today: date | None = None, horiz
         counts[o.leaflet_id] = counts.get(o.leaflet_id, 0) + 1
     offers = dedupe_offers(offers)
     publish({o.image_url for o in offers if o.image_url})
+    refs = load_cz_prices(con, today)
+    dumped = []
+    for o in offers:
+        d = o.model_dump(mode="json")
+        qty = o.quantity if o.unit == o.unit_price_unit else None
+        d["cz_ref"] = cz_reference(o.name_pl or o.name, o.unit_price_pln, o.unit_price_unit, qty, refs, rate)
+        dumped.append(d)
     offers_json = {"generated_at": _now(), "rate_czk_per_pln": round(rate, 4),
-                   "offers": [o.model_dump(mode="json") for o in offers]}
+                   "cz_source": {"name": "ojeb.cz", "url": "https://ojeb.cz/"}, "offers": dumped}
     (OUT_DIR / "offers-latest.json").write_text(json.dumps(offers_json, ensure_ascii=False), encoding="utf-8")
 
     leaflets = []

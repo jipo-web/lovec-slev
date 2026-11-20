@@ -99,7 +99,7 @@ export const FilterToolbar: React.FC<FilterToolbarProps> = ({
             className="text-xs py-2 px-3 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white focus:outline-none focus:border-red-500 font-medium"
           >
             {hasVerdicts && <option value="score">Nejlepší nabídky (skóre)</option>}
-            {hasCzechPrices && <option value="savings_pct">Největší úspora vs ČR (%)</option>}
+            {hasCzechPrices && <option value="savings_pct">Největší úspora proti ČR (%)</option>}
             <option value="discount_pct">Největší sleva v letáku (%)</option>
             <option value="discount_pln">Nejvyšší sleva v letáku (zł)</option>
             <option value="price_asc">Nejnižší cena</option>

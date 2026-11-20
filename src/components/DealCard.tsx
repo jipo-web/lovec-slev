@@ -4,6 +4,7 @@ import { STORES } from '../data/stores';
 import { ProductImage } from './ProductImage';
 import { formatCzk, formatNum2, discountPct, MIN_VISIBLE_DISCOUNT_PCT, validityInfo } from '../utils/format';
 import { linePrice } from '../utils/pricing';
+import { czechComparison } from '../utils/czech';
 import { Plus, Minus, ShieldCheck, AlertTriangle, AlertCircle, BookOpen, Flame, CalendarClock } from 'lucide-react';
 
 const VERDICT_STYLES: Record<Verdict, { label: string; cls: string }> = {
@@ -63,9 +64,7 @@ export const DealCard: React.FC<DealCardProps> = ({
 }) => {
   const store = STORES[deal.store];
   const promoCzk = deal.promoPricePln * exchangeRate;
-  const hasCzPrice = deal.czechEquivalentCzk > 0;
-  const savingsVsCzCzk = hasCzPrice ? Math.max(0, deal.czechEquivalentCzk - promoCzk) : 0;
-  const savingsVsCzPct = hasCzPrice ? Math.round((savingsVsCzCzk / deal.czechEquivalentCzk) * 100) : 0;
+  const cz = czechComparison(deal, exchangeRate);
   const verdictBadge = deal.verdict ? VERDICT_STYLES[deal.verdict] : null;
   const cartLine = cartQuantity > 0 ? linePrice(deal, cartQuantity) : null;
 
@@ -178,14 +177,6 @@ export const DealCard: React.FC<DealCardProps> = ({
             </div>
           </div>
 
-          {savingsVsCzPct > 0 && (
-            <div className="text-right shrink-0">
-              <span className="text-[10px] text-emerald-700 dark:text-emerald-400 font-medium block">Úspora vs ČR</span>
-              <span className="text-lg font-black text-emerald-600 dark:text-emerald-400 font-mono tabular-nums leading-none block">
-                -{savingsVsCzPct} %
-              </span>
-            </div>
-          )}
         </div>
       </div>
 
@@ -213,12 +204,29 @@ export const DealCard: React.FC<DealCardProps> = ({
               -{Math.round(pct!)} %
             </span>
           )}
-          {!showDiscount && hasCzPrice && (
-            <div className="text-right text-[11px] text-slate-500 dark:text-slate-400">
-              v ČR ~{formatCzk(deal.czechEquivalentCzk)}
-            </div>
-          )}
         </div>
+
+        {/* Czech comparison – one line, only where a comparable Czech offer exists */}
+        {cz && (
+          <div
+            className="mt-1.5 text-[11px] leading-snug text-slate-600 dark:text-slate-400"
+            title={`Nejlevnější akce v ČR na stejný druh zboží (${deal.czRef!.type}), ne stejná značka. Zdroj: ojeb.cz`}
+          >
+            <span aria-hidden="true">🇨🇿 </span>
+            {cz.reference} ·{' '}
+            <span
+              className={`font-semibold ${
+                cz.tone === 'cheaper'
+                  ? 'text-emerald-700 dark:text-emerald-400'
+                  : cz.tone === 'dearer'
+                    ? 'text-rose-700 dark:text-rose-400'
+                    : 'text-slate-700 dark:text-slate-300'
+              }`}
+            >
+              {cz.verdict}
+            </span>
+          </div>
+        )}
 
         {/* Validity of this particular offer (can be shorter than the leaflet) */}
         <div

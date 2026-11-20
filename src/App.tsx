@@ -15,8 +15,22 @@ import { LeafletGrid } from './components/LeafletGrid';
 import { LeafletPager } from './components/LeafletPager';
 import { ShoppingListDrawer } from './components/ShoppingListDrawer';
 import { BorderShoppingGuide } from './components/BorderShoppingGuide';
-import { ShieldAlert, HelpCircle, Flame } from 'lucide-react';
+import { ShieldAlert, HelpCircle, Flame, CloudOff, RefreshCw, ExternalLink } from 'lucide-react';
 import { discountPct, MIN_VISIBLE_DISCOUNT_PCT } from './utils/format';
+import { linePrice } from './utils/pricing';
+import { foldText, matchesTokens, queryTokens } from './utils/search';
+
+/** Cards rendered at once; more on "Zobrazit další". Keeps the DOM small and filters fast. */
+const PAGE_SIZE = 60;
+
+type DataStatus = 'loading' | 'ready' | 'error';
+
+/** "2026-11-19T01:34:00+01:00" → "19. 11. 2026 v 1:34" (same style as the rest of the site) */
+function formatGeneratedAt(iso: string): string {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return iso;
+  return `${d.getDate()}. ${d.getMonth() + 1}. ${d.getFullYear()} v ${d.getHours()}:${String(d.getMinutes()).padStart(2, '0')}`;
+}
 
 export default function App() {
   // Navigation & View tabs
@@ -27,13 +41,17 @@ export default function App() {
   const [selectedCategory, setSelectedCategory] = useState<CategoryId>('all');
   const [selectedTrickType, setSelectedTrickType] = useState<TrickType | 'all'>('all');
   const [searchQuery, setSearchQuery] = useState('');
-  const [sortBy, setSortBy] = useState<SortKey>('savings_pct');
+  const [sortBy, setSortBy] = useState<SortKey>('discount_pct');
   const [selectedVerdict, setSelectedVerdict] = useState<Verdict | 'all'>('all');
   const [selectedDay, setSelectedDay] = useState<string>(() => toIsoDay(new Date()));
 
-  // Data source: pipeline JSON with mock fallback
-  const [allDeals, setAllDeals] = useState<DealItem[]>(DEALS);
+  // Data source: pipeline JSON. Demo data only in local development, never silently in production.
+  const [allDeals, setAllDeals] = useState<DealItem[]>([]);
+  const [dataStatus, setDataStatus] = useState<DataStatus>('loading');
+  const [isDemoData, setIsDemoData] = useState(false);
+  const [loadAttempt, setLoadAttempt] = useState(0);
   const [generatedAt, setGeneratedAt] = useState<string | null>(null);
+  const [visibleCount, setVisibleCount] = useState(PAGE_SIZE);
   const [leaflets, setLeaflets] = useState<PipelineLeaflet[] | null>(null);
 
   // Currency & Modals
@@ -58,7 +76,7 @@ export default function App() {
     setSelectedTrickType('all');
     setSelectedVerdict('all');
     setSearchQuery('');
-    setSortBy('savings_pct');
+    setSortBy(hasVerdicts ? 'score' : 'discount_pct');
     setSelectedDay(toIsoDay(new Date()));
     setActiveTrickModalDeal(null);
     setFlyerPageView(null);
@@ -139,17 +157,31 @@ export default function App() {
     }
   });
 
-  // Load real data from the pipeline (falls back to mock DEALS)
+  // Load real data from the pipeline. A failed load shows an error with a retry –
+  // never expired demo offers dressed up as today's deals.
   useEffect(() => {
     let cancelled = false;
+    setDataStatus('loading');
     loadOffers().then((file) => {
-      if (cancelled || !file || !file.offers || file.offers.length === 0) return;
+      if (cancelled) return;
+      if (!file || !file.offers || file.offers.length === 0) {
+        if (import.meta.env.DEV) {
+          setAllDeals(DEALS);
+          setIsDemoData(true);
+          setDataStatus('ready');
+        } else {
+          setDataStatus('error');
+        }
+        return;
+      }
       setAllDeals(file.offers.map((o) => offerToDealItem(o, file.rate_czk_per_pln)));
       setGeneratedAt(file.generated_at);
+      setIsDemoData(false);
       if (file.rate_czk_per_pln > 0 && localStorage.getItem('lovci_pln_rate') === null) {
         setExchangeRate(file.rate_czk_per_pln);
       }
-      setSortBy(file.offers.some((o) => o.verdict) ? 'score' : 'savings_pct');
+      setSortBy(file.offers.some((o) => o.verdict) ? 'score' : 'discount_pct');
+      setDataStatus('ready');
     });
     loadLeaflets().then((file) => {
       if (cancelled || !file || !file.leaflets || file.leaflets.length === 0) return;
@@ -158,9 +190,23 @@ export default function App() {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [loadAttempt]);
 
   const hasVerdicts = useMemo(() => allDeals.some((d) => d.verdict), [allDeals]);
+  // Czech reference prices are not in the live data yet – the "vs ČR" sort only appears once they are.
+  const hasCzechPrices = useMemo(() => allDeals.some((d) => d.czechEquivalentCzk > 0), [allDeals]);
+  useEffect(() => {
+    if (sortBy === 'savings_pct' && !hasCzechPrices && dataStatus === 'ready') setSortBy('discount_pct');
+  }, [sortBy, hasCzechPrices, dataStatus]);
+
+  // Folded search text per deal (computed once per data load, not per keystroke)
+  const searchIndex = useMemo(() => {
+    const m = new Map<string, string>();
+    allDeals.forEach((d) =>
+      m.set(d.id, foldText([d.title, d.polishTitle, STORES[d.store].name, d.packageSize, d.trickExplanation].join(' ')))
+    );
+    return m;
+  }, [allDeals]);
 
   // Persist exchange rate only when the user changes it manually,
   // so the pipeline rate is not frozen as a "custom" rate.
@@ -206,6 +252,25 @@ export default function App() {
     });
   };
 
+  // Cart entries saved before a data refresh keep their old copy of the deal;
+  // refresh them so conditions (min/max, regular price) are current.
+  useEffect(() => {
+    if (dataStatus !== 'ready' || isDemoData) return;
+    const byId = new Map(allDeals.map((d) => [d.id, d]));
+    setCart((prev) => {
+      let changed = false;
+      const next = prev.map((item) => {
+        const fresh = byId.get(item.deal.id);
+        if (fresh && fresh !== item.deal) {
+          changed = true;
+          return { ...item, deal: fresh };
+        }
+        return item;
+      });
+      return changed ? next : prev;
+    });
+  }, [allDeals, dataStatus, isDemoData]);
+
   const handleUpdateQuantity = (dealId: string, quantity: number) => {
     if (quantity <= 0) {
       handleRemoveItem(dealId);
@@ -244,20 +309,24 @@ export default function App() {
     return cart.reduce((sum, item) => sum + item.quantity, 0) + customItems.reduce((sum, i) => sum + i.quantity, 0);
   }, [cart, customItems]);
 
+  // Totals honour the deal conditions: below the minimum, over the limit or in an
+  // incomplete bundle the shopper pays the regular price.
   const totalCartCzk = useMemo(() => {
-    const dealsPln = cart.reduce((sum, item) => sum + item.deal.promoPricePln * item.quantity, 0);
+    const dealsPln = cart.reduce((sum, item) => sum + linePrice(item.deal, item.quantity).totalPln, 0);
     const customPln = customItems.reduce((sum, item) => sum + item.estimatedPricePln * item.quantity, 0);
     return (dealsPln + customPln) * exchangeRate;
   }, [cart, customItems, exchangeRate]);
 
   const totalSavedCzk = useMemo(() => {
-    const dealsPln = cart.reduce((sum, item) => sum + item.deal.promoPricePln * item.quantity, 0);
-    const dealsCzCzk = cart.reduce((sum, item) => sum + item.deal.czechEquivalentCzk * item.quantity, 0);
+    const priced = cart.filter((item) => item.deal.czechEquivalentCzk > 0);
+    const dealsPln = priced.reduce((sum, item) => sum + linePrice(item.deal, item.quantity).totalPln, 0);
+    const dealsCzCzk = priced.reduce((sum, item) => sum + item.deal.czechEquivalentCzk * item.quantity, 0);
     return Math.max(0, dealsCzCzk - dealsPln * exchangeRate);
   }, [cart, exchangeRate]);
 
   // Filtered & sorted deals
   const filteredDeals = useMemo(() => {
+    const tokens = queryTokens(searchQuery);
     return allDeals.filter((deal) => {
       // Day filter (ISO date strings compare lexicographically)
       // (only for real pipeline data; mock deals have outdated validity)
@@ -275,15 +344,8 @@ export default function App() {
       // Verdict filter
       if (selectedVerdict !== 'all' && deal.verdict !== selectedVerdict) return false;
 
-      // Search query
-      if (searchQuery.trim()) {
-        const query = searchQuery.toLowerCase().trim();
-        const matchesTitle = deal.title.toLowerCase().includes(query);
-        const matchesPolish = deal.polishTitle.toLowerCase().includes(query);
-        const matchesStore = STORES[deal.store].name.toLowerCase().includes(query);
-        const matchesExplanation = deal.trickExplanation.toLowerCase().includes(query);
-        return matchesTitle || matchesPolish || matchesStore || matchesExplanation;
-      }
+      // Search query: no diacritics needed, every word must match
+      if (tokens.length) return matchesTokens(searchIndex.get(deal.id) ?? '', tokens);
 
       return true;
     }).sort((a, b) => {
@@ -298,6 +360,10 @@ export default function App() {
         if (aSaving === bSaving) return b.regularPricePln - b.promoPricePln - (a.regularPricePln - a.promoPricePln);
         return bSaving - aSaving;
       }
+      if (sortBy === 'discount_pct') {
+        const pct = (d: DealItem) => discountPct(d.promoPricePln, d.regularPricePln) ?? -1;
+        return pct(b) - pct(a);
+      }
       if (sortBy === 'price_asc') {
         return a.promoPricePln - b.promoPricePln;
       }
@@ -308,29 +374,30 @@ export default function App() {
       }
       return a.title.localeCompare(b.title, 'pl');
     });
-  }, [allDeals, generatedAt, selectedDay, selectedStore, selectedCategory, selectedTrickType, selectedVerdict, searchQuery, sortBy, exchangeRate]);
+  }, [allDeals, searchIndex, generatedAt, selectedDay, selectedStore, selectedCategory, selectedTrickType, selectedVerdict, searchQuery, sortBy, exchangeRate]);
 
-  // Deal counts by store
-  const dealCountsByStore = useMemo(() => {
-    const counts: Record<StoreId, number> = {
-      biedronka: 0,
-      dino: 0,
-      lidl: 0,
-      kaufland: 0,
-    };
-    allDeals.forEach((d) => {
-      counts[d.store] = (counts[d.store] || 0) + 1;
-    });
-    return counts;
-  }, [allDeals]);
+  // New filter → start again with the first page of cards
+  useEffect(() => {
+    setVisibleCount(PAGE_SIZE);
+  }, [selectedDay, selectedStore, selectedCategory, selectedTrickType, selectedVerdict, searchQuery, sortBy]);
 
   const cartItemIds = useMemo(() => new Set(cart.map((c) => c.deal.id)), [cart]);
+  const cartQtyById = useMemo(() => new Map(cart.map((c) => [c.deal.id, c.quantity])), [cart]);
 
   // Deals valid on the selected day (before store/category/search filters)
   const dealsForDay = useMemo(
     () => allDeals.filter((d) => !generatedAt || (d.validFrom <= selectedDay && d.validUntil >= selectedDay)),
     [allDeals, generatedAt, selectedDay]
   );
+
+  // Deal counts by store for the selected day – the same base as the hero ("nabídek dnes")
+  const dealCountsByStore = useMemo(() => {
+    const counts: Record<StoreId, number> = { biedronka: 0, dino: 0, lidl: 0, kaufland: 0 };
+    dealsForDay.forEach((d) => {
+      counts[d.store] = (counts[d.store] || 0) + 1;
+    });
+    return counts;
+  }, [dealsForDay]);
 
   // Hero statistics computed from real data instead of hard-coded marketing numbers
   const heroStats = useMemo(() => {
@@ -377,9 +444,19 @@ export default function App() {
     selectedTrickType === 'all' &&
     selectedVerdict === 'all' &&
     !searchQuery.trim();
+  const gridDeals = useMemo(
+    () => (showTopDeals ? filteredDeals.filter((d) => !topDealIds.has(d.id)) : filteredDeals),
+    [filteredDeals, showTopDeals, topDealIds]
+  );
 
   return (
-    <div className="min-h-screen bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100 flex flex-col transition-colors selection:bg-red-100 selection:text-red-900">
+    <div className="min-h-screen bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100 flex flex-col transition-colors selection:bg-red-100 selection:text-red-900 overflow-x-clip">
+      <a
+        href="#obsah"
+        className="sr-only focus:not-sr-only focus:fixed focus:top-2 focus:left-2 focus:z-[60] focus:px-4 focus:py-2 focus:rounded-lg focus:bg-white focus:text-slate-900 focus:shadow-lg"
+      >
+        Přeskočit na obsah
+      </a>
       {/* Top Bar Header */}
       <Navbar
         activeTab={activeTab}
@@ -396,7 +473,7 @@ export default function App() {
       />
 
       {/* Main Content Container */}
-      <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-6 space-y-6">
+      <main id="obsah" tabIndex={-1} className="flex-1 max-w-7xl w-full min-w-0 mx-auto px-4 sm:px-6 lg:px-8 py-6 space-y-6 focus:outline-none">
         {/* Hero Section – one compact row */}
         {activeTab === 'deals' && (
           <div className="p-4 sm:p-5 rounded-2xl bg-gradient-to-r from-white via-slate-50 to-red-50/40 dark:from-slate-900 dark:via-slate-900 dark:to-red-950/20 border border-slate-200 dark:border-slate-800 shadow-xs flex flex-col lg:flex-row lg:items-center justify-between gap-4">
@@ -412,38 +489,90 @@ export default function App() {
                 Biedronka, Lidl.pl, Kaufland.pl a Dino – podmínky věrnostních karet odhalené, ceny přepočtené na koruny.
               </p>
             </div>
-            <div className="grid grid-cols-4 gap-2 sm:gap-4 shrink-0 text-center">
+            <div className="grid grid-cols-4 gap-2 sm:gap-4 shrink-0 text-center" aria-busy={dataStatus === 'loading'}>
               <div>
-                <div className="text-lg sm:text-xl font-black text-slate-900 dark:text-white font-mono tabular-nums">{heroStats.offers}</div>
+                <div className="text-lg sm:text-xl font-black text-slate-900 dark:text-white font-mono tabular-nums">{dataStatus === 'ready' ? heroStats.offers : '…'}</div>
                 <div className="text-[10px] sm:text-[11px] text-slate-500">nabídek dnes</div>
               </div>
               <div>
-                <div className="text-lg sm:text-xl font-black text-slate-900 dark:text-white font-mono tabular-nums">{heroStats.stores}</div>
+                <div className="text-lg sm:text-xl font-black text-slate-900 dark:text-white font-mono tabular-nums">{dataStatus === 'ready' ? heroStats.stores : '…'}</div>
                 <div className="text-[10px] sm:text-[11px] text-slate-500">řetězce</div>
               </div>
               <div>
                 <div className="text-lg sm:text-xl font-black text-emerald-600 dark:text-emerald-400 font-mono tabular-nums">
-                  {heroStats.medianDiscount > 0 ? `-${heroStats.medianDiscount} %` : '–'}
+                  {dataStatus !== 'ready' ? '…' : heroStats.medianDiscount > 0 ? `-${heroStats.medianDiscount} %` : '–'}
                 </div>
                 <div className="text-[10px] sm:text-[11px] text-slate-500">typická sleva</div>
               </div>
               <div>
-                <div className="text-lg sm:text-xl font-black text-red-600 dark:text-red-400 font-mono tabular-nums">{exchangeRate}</div>
+                <div className="text-lg sm:text-xl font-black text-red-600 dark:text-red-400 font-mono tabular-nums">{dataStatus === 'loading' ? '…' : exchangeRate}</div>
                 <div className="text-[10px] sm:text-[11px] text-slate-500">Kč / 1 zł</div>
               </div>
             </div>
           </div>
         )}
 
+        {/* Tab 1: Deals – loading / error states first */}
+        {activeTab === 'deals' && dataStatus === 'loading' && (
+          <div className="space-y-4" aria-live="polite" aria-busy="true">
+            <span className="sr-only">Načítám aktuální letáky…</span>
+            <div className="h-10 rounded-xl bg-slate-200/70 dark:bg-slate-800 animate-pulse" />
+            <div className="h-36 rounded-2xl bg-slate-200/70 dark:bg-slate-800 animate-pulse" />
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
+              {Array.from({ length: 6 }, (_, i) => (
+                <div key={i} className="h-[26rem] rounded-2xl bg-slate-200/70 dark:bg-slate-800 animate-pulse" />
+              ))}
+            </div>
+          </div>
+        )}
+
+        {activeTab === 'deals' && dataStatus === 'error' && (
+          <div role="alert" className="p-8 sm:p-12 text-center bg-white dark:bg-slate-900 rounded-3xl border border-rose-200 dark:border-rose-900 space-y-4">
+            <CloudOff className="w-10 h-10 text-rose-500 mx-auto" />
+            <h2 className="text-base sm:text-lg font-bold text-slate-900 dark:text-white">
+              Aktuální letáky se nepodařilo načíst
+            </h2>
+            <p className="text-sm text-slate-600 dark:text-slate-300 max-w-md mx-auto">
+              Neukazujeme starší ani ukázkové nabídky, aby vás nesvedly ke špatnému nákupu. Zkuste to za chvíli znovu,
+              nebo se podívejte přímo do letáků obchodů.
+            </p>
+            <button
+              onClick={() => setLoadAttempt((n) => n + 1)}
+              className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-slate-900 text-white dark:bg-white dark:text-slate-900 text-sm font-semibold"
+            >
+              <RefreshCw className="w-4 h-4" /> Zkusit znovu
+            </button>
+            <div className="flex flex-wrap justify-center gap-x-4 gap-y-2 text-sm">
+              {Object.values(STORES).map((st) => (
+                <a
+                  key={st.id}
+                  href={st.website}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-1 text-slate-600 hover:text-slate-900 dark:text-slate-300 dark:hover:text-white underline underline-offset-2"
+                >
+                  {st.name} <ExternalLink className="w-3 h-3" />
+                </a>
+              ))}
+            </div>
+          </div>
+        )}
+
         {/* Tab 1: Deals & Price Comparison */}
-        {activeTab === 'deals' && (
+        {activeTab === 'deals' && dataStatus === 'ready' && (
           <div className="space-y-6">
             {/* Data source badge */}
-            <div className="text-[11px] font-mono text-slate-500 dark:text-slate-400">
-              {generatedAt
-                ? `Data z letáků: ${new Date(generatedAt).toLocaleString('cs-CZ', { dateStyle: 'short', timeStyle: 'short' })}`
-                : 'Ukázková data'}
-            </div>
+            {isDemoData ? (
+              <div role="status" className="p-3 rounded-xl bg-amber-50 dark:bg-amber-950/40 border border-amber-300 dark:border-amber-800 text-xs font-semibold text-amber-900 dark:text-amber-200">
+                Ukázková data pro vývoj – nejsou to aktuální nabídky (chybí public/data/offers-latest.json).
+              </div>
+            ) : (
+              generatedAt && (
+                <div className="text-[11px] font-mono text-slate-600 dark:text-slate-400">
+                  Data z letáků: {formatGeneratedAt(generatedAt)}
+                </div>
+              )
+            )}
 
             {/* Day picker */}
             {generatedAt && <DayPicker selectedDay={selectedDay} onSelectDay={setSelectedDay} />}
@@ -467,6 +596,7 @@ export default function App() {
               onSortChange={setSortBy}
               resultsCount={filteredDeals.length}
               hasVerdicts={hasVerdicts}
+              hasCzechPrices={hasCzechPrices}
               selectedVerdict={selectedVerdict}
               onVerdictChange={setSelectedVerdict}
             />
@@ -481,14 +611,13 @@ export default function App() {
                 </div>
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
                   {topDeals.map((deal, idx) => {
-                    const cartItem = cart.find((i) => i.deal.id === deal.id);
                     return (
                       <DealCard
                         key={`top-${deal.id}`}
                         deal={deal}
                         topRank={idx + 1}
                         exchangeRate={exchangeRate}
-                        cartQuantity={cartItem ? cartItem.quantity : 0}
+                        cartQuantity={cartQtyById.get(deal.id) ?? 0}
                         onAddToCart={handleAddToCart}
                         onUpdateQuantity={handleUpdateQuantity}
                         onOpenTrickModal={setActiveTrickModalDeal}
@@ -503,11 +632,11 @@ export default function App() {
             )}
 
             {/* Deals Grid */}
-            {filteredDeals.length > 0 ? (
+            {gridDeals.length > 0 ? (
+              <>
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
-                {filteredDeals.filter((d) => !showTopDeals || !topDealIds.has(d.id)).map((deal) => {
-                  const cartItem = cart.find((i) => i.deal.id === deal.id);
-                  const quantity = cartItem ? cartItem.quantity : 0;
+                {gridDeals.slice(0, visibleCount).map((deal) => {
+                  const quantity = cartQtyById.get(deal.id) ?? 0;
 
                   return (
                     <DealCard
@@ -524,6 +653,20 @@ export default function App() {
                   );
                 })}
               </div>
+              {gridDeals.length > visibleCount && (
+                <div className="flex flex-col items-center gap-2 pt-2">
+                  <button
+                    onClick={() => setVisibleCount((n) => n + PAGE_SIZE)}
+                    className="min-h-11 px-6 py-2.5 rounded-xl bg-slate-900 hover:bg-slate-800 text-white dark:bg-white dark:text-slate-900 text-sm font-semibold"
+                  >
+                    Zobrazit další nabídky
+                  </button>
+                  <span className="text-xs text-slate-500 dark:text-slate-400">
+                    Zobrazeno {Math.min(visibleCount, gridDeals.length)} z {gridDeals.length}
+                  </span>
+                </div>
+              )}
+              </>
             ) : (
               <div className="p-12 text-center bg-white dark:bg-slate-900 rounded-3xl border border-slate-200 dark:border-slate-800 space-y-3">
                 <HelpCircle className="w-10 h-10 text-slate-400 mx-auto" />

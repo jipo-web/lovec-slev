@@ -1,9 +1,14 @@
 import React, { useRef, useState } from 'react';
 import { copyText, whatsappUrl, smsUrl, nativeShare, canNativeShare } from '../utils/share';
 import { formatNum2 } from '../utils/format';
+import { linePrice } from '../utils/pricing';
 import { CartItem, CustomCartItem, StoreId } from '../types';
 import { STORES } from '../data/stores';
-import { X, Plus, Minus, Trash2, Copy, Check, ShoppingBag, Smartphone, ShieldCheck, Sparkles, MessageCircle, MessageSquare, Share2 } from 'lucide-react';
+import { X, Plus, Minus, Trash2, Copy, Check, ShoppingBag, Smartphone, MessageCircle, MessageSquare, Share2, AlertTriangle } from 'lucide-react';
+
+function itemsLabel(n: number): string {
+  return `${n} ${n === 1 ? 'položka' : n >= 2 && n <= 4 ? 'položky' : 'položek'}`;
+}
 
 interface ShoppingListDrawerProps {
   isOpen: boolean;
@@ -38,15 +43,20 @@ export const ShoppingListDrawer: React.FC<ShoppingListDrawerProps> = ({
 
   if (!isOpen) return null;
 
-  // Totals calculation
-  const dealsTotalPln = cart.reduce((sum, item) => sum + item.deal.promoPricePln * item.quantity, 0);
+  // Totals calculation – each line priced by its conditions (min. quantity, limit, bundles)
+  const lines = new Map(cart.map((item) => [item.deal.id, linePrice(item.deal, item.quantity)]));
+  const lineOf = (id: string) => lines.get(id)!;
+  const dealsTotalPln = cart.reduce((sum, item) => sum + lineOf(item.deal.id).totalPln, 0);
+  const linesWithNotes = cart.filter((item) => lineOf(item.deal.id).notes.length > 0).length;
   const customTotalPln = customItems.reduce((sum, item) => sum + item.estimatedPricePln * item.quantity, 0);
   const totalPln = dealsTotalPln + customTotalPln;
   const totalCzk = totalPln * exchangeRate;
 
-  // Savings calculation vs Czech equivalent
-  const dealsTotalCzCzk = cart.reduce((sum, item) => sum + item.deal.czechEquivalentCzk * item.quantity, 0);
-  const totalSavedCzk = Math.max(0, dealsTotalCzCzk - dealsTotalPln * exchangeRate);
+  // Savings vs Czech equivalent – only for items that have a Czech reference price
+  const czPriced = cart.filter((item) => item.deal.czechEquivalentCzk > 0);
+  const dealsTotalCzCzk = czPriced.reduce((sum, item) => sum + item.deal.czechEquivalentCzk * item.quantity, 0);
+  const czPricedPln = czPriced.reduce((sum, item) => sum + lineOf(item.deal.id).totalPln, 0);
+  const totalSavedCzk = Math.max(0, dealsTotalCzCzk - czPricedPln * exchangeRate);
   const totalSavedPct = dealsTotalCzCzk > 0 ? Math.round((totalSavedCzk / dealsTotalCzCzk) * 100) : 0;
 
   // Determine needed loyalty apps
@@ -79,12 +89,16 @@ export const ShoppingListDrawer: React.FC<ShoppingListDrawerProps> = ({
     if (cart.length > 0) {
       text += `--- POLOŽKY Z LETÁKŮ ---\n`;
       cart.forEach((item) => {
-        const itemCzk = item.deal.promoPricePln * exchangeRate * item.quantity;
+        const line = lineOf(item.deal.id);
+        const itemCzk = line.totalPln * exchangeRate;
         text += `[ ] ${item.quantity}x ${item.deal.title} (${STORES[item.deal.store].name})\n`;
-        text += `    Cena: ${formatNum2(item.deal.promoPricePln * item.quantity)} zł (≈ ${itemCzk.toFixed(0)} Kč)\n`;
+        text += `    Cena: ${formatNum2(line.totalPln)} zł (≈ ${itemCzk.toFixed(0)} Kč)\n`;
         if (item.deal.trickType !== 'clean') {
           text += `    ⚠️ PODMÍNKA: ${item.deal.trickTitle}\n`;
         }
+        line.notes.forEach((n) => {
+          text += `    ⚠️ ${n}\n`;
+        });
       });
       text += `\n`;
     }
@@ -152,7 +166,7 @@ export const ShoppingListDrawer: React.FC<ShoppingListDrawerProps> = ({
                 Chytrý nákupní seznam do Polska
               </h2>
               <span className="text-xs text-slate-500 dark:text-slate-400 font-mono">
-                {cart.length + customItems.length} položek · Kurz 1 PLN = {exchangeRate} Kč
+                {itemsLabel(cart.length + customItems.length)} · Kurz 1 PLN = {exchangeRate} Kč
               </span>
             </div>
           </div>
@@ -178,6 +192,11 @@ export const ShoppingListDrawer: React.FC<ShoppingListDrawerProps> = ({
               <div className="text-xs font-bold text-red-400 font-mono mt-0.5">
                 ≈ {Math.round(totalCzk)} Kč
               </div>
+              {linesWithNotes > 0 && (
+                <div className="text-[11px] text-amber-300 mt-1">
+                  Počítáno včetně podmínek akcí ({linesWithNotes}× část za běžnou cenu)
+                </div>
+              )}
             </div>
 
             {dealsTotalCzCzk > 0 && (
@@ -240,15 +259,19 @@ export const ShoppingListDrawer: React.FC<ShoppingListDrawerProps> = ({
             ) : (
               <div className="space-y-2.5">
                 {cart.map(({ deal, quantity }) => {
-                  const itemPln = deal.promoPricePln * quantity;
+                  const line = lineOf(deal.id);
+                  const itemPln = line.totalPln;
                   const itemCzk = itemPln * exchangeRate;
                   const store = STORES[deal.store];
 
                   return (
                     <div
                       key={deal.id}
-                      className="p-3 rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-800/80 shadow-2xs flex items-center justify-between gap-3 text-xs"
+                      className={`p-3 rounded-2xl border bg-white dark:bg-slate-800/80 shadow-2xs text-xs ${
+                        line.notes.length ? 'border-amber-300 dark:border-amber-700' : 'border-slate-200 dark:border-slate-800'
+                      }`}
                     >
+                    <div className="flex items-center justify-between gap-2 sm:gap-3">
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-1.5 mb-0.5">
                           <span
@@ -260,7 +283,7 @@ export const ShoppingListDrawer: React.FC<ShoppingListDrawerProps> = ({
                             {store.name}
                           </span>
                           {deal.trickType !== 'clean' && (
-                            <span className="text-[10px] text-amber-600 dark:text-amber-400 font-medium truncate max-w-[200px]">
+                            <span className="text-[10px] text-amber-800 dark:text-amber-400 font-medium truncate max-w-[200px]">
                               ⚠️ {deal.trickTitle}
                             </span>
                           )}
@@ -269,8 +292,10 @@ export const ShoppingListDrawer: React.FC<ShoppingListDrawerProps> = ({
                         <div className="font-bold text-slate-900 dark:text-white truncate">
                           {deal.title}
                         </div>
-                        <div className="text-slate-500 dark:text-slate-400 font-mono">
+                        <div className="text-slate-600 dark:text-slate-400 font-mono">
                           {deal.promoPricePln.toFixed(2)} PLN/ks ≈ {(deal.promoPricePln * exchangeRate).toFixed(1)} Kč
+                          {deal.minQuantity && deal.minQuantity > 1 ? ` · od ${deal.minQuantity} ks` : ''}
+                          {deal.maxQuantity ? ` · max. ${deal.maxQuantity} ks` : ''}
                         </div>
                       </div>
 
@@ -278,7 +303,8 @@ export const ShoppingListDrawer: React.FC<ShoppingListDrawerProps> = ({
                       <div className="flex items-center gap-1.5 shrink-0 bg-slate-100 dark:bg-slate-700/60 p-1 rounded-xl">
                         <button
                           onClick={() => onUpdateQuantity(deal.id, quantity - 1)}
-                          className="w-6 h-6 rounded-lg bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200 flex items-center justify-center hover:bg-slate-200 transition-colors"
+                          aria-label="Ubrat 1 ks"
+                          className="w-8 h-8 rounded-lg bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200 flex items-center justify-center hover:bg-slate-200 transition-colors"
                         >
                           <Minus className="w-3 h-3" />
                         </button>
@@ -287,7 +313,8 @@ export const ShoppingListDrawer: React.FC<ShoppingListDrawerProps> = ({
                         </span>
                         <button
                           onClick={() => onUpdateQuantity(deal.id, quantity + 1)}
-                          className="w-6 h-6 rounded-lg bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200 flex items-center justify-center hover:bg-slate-200 transition-colors"
+                          aria-label="Přidat 1 ks"
+                          className="w-8 h-8 rounded-lg bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200 flex items-center justify-center hover:bg-slate-200 transition-colors"
                         >
                           <Plus className="w-3 h-3" />
                         </button>
@@ -306,11 +333,27 @@ export const ShoppingListDrawer: React.FC<ShoppingListDrawerProps> = ({
                       {/* Remove button */}
                       <button
                         onClick={() => onRemoveItem(deal.id)}
-                        className="text-slate-400 hover:text-rose-600 p-1 transition-colors"
+                        className="text-slate-500 hover:text-rose-600 w-8 h-8 flex items-center justify-center transition-colors"
                         title="Odstranit"
+                        aria-label={`Odstranit ${deal.title}`}
                       >
                         <Trash2 className="w-3.5 h-3.5" />
                       </button>
+                    </div>
+                    {line.notes.length > 0 && (
+                      <div className="mt-2 pt-2 border-t border-amber-200 dark:border-amber-800/60 flex flex-wrap items-center gap-2 text-[11px] text-amber-900 dark:text-amber-200">
+                        <AlertTriangle className="w-3.5 h-3.5 shrink-0 text-amber-700 dark:text-amber-400" aria-hidden="true" />
+                        <span className="flex-1 min-w-[12rem]">{line.notes.join(' · ')}</span>
+                        {line.suggestedQuantity && (
+                          <button
+                            onClick={() => onUpdateQuantity(deal.id, line.suggestedQuantity!)}
+                            className="px-2.5 py-1.5 rounded-lg bg-amber-100 hover:bg-amber-200 dark:bg-amber-900/50 dark:hover:bg-amber-900 font-semibold"
+                          >
+                            Doplnit na {line.suggestedQuantity} ks
+                          </button>
+                        )}
+                      </div>
+                    )}
                     </div>
                   );
                 })}

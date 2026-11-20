@@ -2,7 +2,7 @@ export type StoreId = 'biedronka' | 'lidl' | 'kaufland' | 'dino';
 
 export type Verdict = 'trhak' | 'dobra_koupe' | 'nic_moc' | 'past';
 
-export type SortKey = 'score' | 'savings_pct' | 'price_asc' | 'discount_pln' | 'title';
+export type SortKey = 'score' | 'savings_pct' | 'discount_pct' | 'price_asc' | 'discount_pln' | 'title';
 
 export type TrickType = 'clean' | 'conditional_card' | 'trick_warning';
 
@@ -34,6 +34,10 @@ export interface DealItem {
   requiredCard: string | null;
   minQuantity?: number;
   maxLimit?: string;
+  /** Promo price applies to at most this many pieces (the rest at the regular price). */
+  maxQuantity?: number;
+  /** "2+1 gratis", "2nd for 1 zł": the promo price is an average over complete bundles of minQuantity. */
+  promoInBundles?: boolean;
   validFrom: string;
   validUntil: string;
   flyerPage: number;

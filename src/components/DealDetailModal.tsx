@@ -130,19 +130,27 @@ export const DealDetailModal: React.FC<DealDetailModalProps> = ({
               <span>Hlídač chytáků: {deal.trickTitle}</span>
             </div>
 
-            <p className="text-xs leading-relaxed opacity-95">
-              {deal.trickExplanation}
-            </p>
+            {deal.trickExplanation && (
+              <div className="text-xs leading-relaxed">
+                <span className="block text-[11px] font-semibold opacity-80">Text podmínky v letáku (originál):</span>
+                <span lang="pl" className="opacity-95">{deal.trickExplanation}</span>
+              </div>
+            )}
+            {deal.trickType === 'clean' && deal.trickExplanation && (
+              <div className="text-[11px] opacity-80">
+                Žádnou kartu ani minimální odběr jsme v textu nenašli. Pokud text výše popisuje podmínku, platí ta z letáku.
+              </div>
+            )}
 
             {deal.minQuantity && deal.minQuantity > 1 && (
               <div className="text-xs font-mono font-semibold pt-1 border-t border-black/10 dark:border-white/10">
-                👉 Minimální nákup pro získání slevy: {deal.minQuantity} ks!
+                👉 Minimální nákup pro získání slevy: {deal.minQuantity} ks{deal.promoInBundles ? ' (akce platí po celých sadách)' : ''}. Při menším počtu platíte běžnou cenu.
               </div>
             )}
 
             {deal.maxLimit && (
               <div className="text-xs font-mono font-semibold">
-                👉 Omezení: {deal.maxLimit}
+                👉 Omezení: {deal.maxLimit} – další kusy za běžnou cenu
               </div>
             )}
           </div>

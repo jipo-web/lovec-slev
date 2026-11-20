@@ -12,3 +12,24 @@
     font-variant-numeric: tabular-nums;
   }
 }
+
+@layer base {
+  /* Visible keyboard focus everywhere (mouse clicks keep no ring) */
+  :focus-visible {
+    outline: 2px solid #d81e3a;
+    outline-offset: 2px;
+    border-radius: 0.375rem;
+  }
+  html {
+    -webkit-text-size-adjust: 100%;
+  }
+}
+
+@layer utilities {
+  .scrollbar-none {
+    scrollbar-width: none;
+  }
+  .scrollbar-none::-webkit-scrollbar {
+    display: none;
+  }
+}

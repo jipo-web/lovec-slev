@@ -38,7 +38,7 @@ export const BorderShoppingGuide: React.FC = () => {
             Když přiložíte českou platební kartu k terminálu, obrazovka vám často nabídne: <em>"Zaplatit v CZK s garantovaným kurzem"</em> nebo <em>"Zaplatit v PLN"</em>.
           </p>
           <div className="p-3 rounded-xl bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-800 text-xs text-rose-900 dark:text-rose-200 font-medium">
-            ⚠️ <strong>Zásadní pravidlo:</strong> VŽDY na terminálu zmáčkněte <strong>PLN (zloté)</strong>! Pokud zvolíte CZK, polská banka vám naúčtuje kurz s marží 8 až 12 %, což může nákup za 2 000 Kč prodražit o 200 Kč.
+            ⚠️ <strong>Zásadní pravidlo:</strong> na terminálu (i v bankomatu) volte <strong>PLN (zloté)</strong>. Při volbě CZK přepočítá cenu provozovatel terminálu vlastním kurzem s přirážkou, která bývá o několik procent horší než kurz vaší banky – terminál ji musí uvést na displeji. Volbou PLN necháte přepočet na své bance; jaký kurz a poplatek si účtuje ona, zjistíte v jejím ceníku.
           </div>
         </div>
 
@@ -95,11 +95,11 @@ export const BorderShoppingGuide: React.FC = () => {
         {/* Tip 4: Sunday Trading Ban (Niedziele Handlowe) */}
         <div className="p-6 rounded-3xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-xs space-y-3">
           <div className="flex items-center gap-3">
-            <div className="p-2.5 rounded-2xl bg-amber-50 dark:bg-amber-950/40 text-amber-600 dark:text-amber-400">
+            <div className="p-2.5 rounded-2xl bg-amber-50 dark:bg-amber-950/40 text-amber-700 dark:text-amber-400">
               <Calendar className="w-5 h-5" />
             </div>
             <div>
-              <span className="text-[11px] font-mono text-amber-600 dark:text-amber-400 font-bold uppercase">
+              <span className="text-[11px] font-mono text-amber-700 dark:text-amber-400 font-bold uppercase">
                 Otevírací doba
               </span>
               <h3 className="text-base font-bold text-slate-900 dark:text-white">
@@ -111,7 +111,7 @@ export const BorderShoppingGuide: React.FC = () => {
             V Polsku platí přísný zákon zakazující maloobchodní prodej v neděli (tzv. <em>Niedziela niehandlowa</em>). Supermarkety Biedronka, Dino, Lidl a Kaufland mají v běžné neděle <strong>zavřeno</strong>.
           </p>
           <div className="p-3 rounded-xl bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800 text-xs text-amber-900 dark:text-amber-200">
-            Výjimkou je pouze cca 7 "obchodních nedělí" (Niedziele handlowe) v roce – typicky před Vánocemi, Velikonocemi a na konci srpna. Otevřeny v neděli smějí být pouze čerpací stanice a malé rodinné obchody Žabka.
+            Výjimkou je jen několik „obchodních nedělí“ (<em>niedziele handlowe</em>) v roce – typicky před Vánocemi a Velikonocemi, poslední neděle v lednu, dubnu, červnu a srpnu. Přesný kalendář na daný rok si ověřte. V neděli mohou mít otevřeno jen provozovny, na které zákon pamatuje výjimkou – hlavně ty, kde za pultem stojí sám majitel (proto bývá otevřená část prodejen Żabka), dále čerpací stanice, lékárny, pekárny, květinářství nebo obchody na nádražích a letištích. Supermarkety řetězců, které tu sledujeme, mají zavřeno.
           </div>
         </div>
       </div>

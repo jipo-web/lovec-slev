@@ -13,6 +13,8 @@ interface FilterToolbarProps {
   onSortChange: (sort: SortKey) => void;
   resultsCount: number;
   hasVerdicts?: boolean;
+  /** Czech reference prices exist – only then may we offer a "savings vs ČR" sort. */
+  hasCzechPrices?: boolean;
   selectedVerdict?: Verdict | 'all';
   onVerdictChange?: (verdict: Verdict | 'all') => void;
 }
@@ -36,6 +38,7 @@ export const FilterToolbar: React.FC<FilterToolbarProps> = ({
   onSortChange,
   resultsCount,
   hasVerdicts = false,
+  hasCzechPrices = false,
   selectedVerdict = 'all',
   onVerdictChange,
 }) => {
@@ -56,39 +59,50 @@ export const FilterToolbar: React.FC<FilterToolbarProps> = ({
       {/* Top search & sorting row */}
       <div className="flex flex-col md:flex-row items-stretch md:items-center justify-between gap-3">
         {/* Search Input */}
-        <div className="relative flex-1">
-          <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
-          <input
-            type="text"
-            value={searchQuery}
-            onChange={(e) => onSearchChange(e.target.value)}
-            placeholder="Hledat masło, schab, kawa, proszek, Dino…"
-            className="w-full pl-9 pr-4 py-2 text-xs rounded-xl bg-slate-50 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white placeholder-slate-400 focus:outline-none focus:border-red-500 transition-colors"
-          />
-          {searchQuery && (
-            <button
-              onClick={() => onSearchChange('')}
-              className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-slate-400 hover:text-slate-600 dark:hover:text-slate-200"
-            >
-              ✕
-            </button>
-          )}
+        <div className="flex-1 min-w-0">
+          <div className="relative">
+            <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" aria-hidden="true" />
+            <input
+              type="search"
+              value={searchQuery}
+              onChange={(e) => onSearchChange(e.target.value)}
+              placeholder="masło, schab, kawa, proszek, Dino…"
+              aria-label="Hledat zboží (polsky)"
+              aria-describedby="search-hint"
+              enterKeyHint="search"
+              className="w-full pl-9 pr-10 py-2 text-base sm:text-xs rounded-xl bg-slate-50 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white placeholder-slate-500 focus:outline-none focus:border-red-500 transition-colors [&::-webkit-search-cancel-button]:hidden"
+            />
+            {searchQuery && (
+              <button
+                onClick={() => onSearchChange('')}
+                className="absolute right-1 top-1/2 -translate-y-1/2 w-9 h-9 flex items-center justify-center text-sm text-slate-500 hover:text-slate-700 dark:hover:text-slate-200"
+                aria-label="Smazat hledání"
+              >
+                ✕
+              </button>
+            )}
+          </div>
+          <p id="search-hint" className="mt-1 text-[11px] text-slate-600 dark:text-slate-400">
+            Názvy jsou v originále, jak je uvidíte v regálu – hledejte polsky. Diakritika není nutná (<em>maslo</em> najde <em>masło</em>), více slov se kombinuje.
+          </p>
         </div>
 
         {/* Sort selector */}
         <div className="flex items-center gap-2 shrink-0">
-          <span className="text-xs text-slate-500 dark:text-slate-400 whitespace-nowrap flex items-center gap-1">
-            <SlidersHorizontal className="w-3.5 h-3.5" /> Řadit:
-          </span>
+          <label htmlFor="sort-select" className="text-xs text-slate-600 dark:text-slate-400 whitespace-nowrap flex items-center gap-1">
+            <SlidersHorizontal className="w-3.5 h-3.5" aria-hidden="true" /> Řadit:
+          </label>
           <select
+            id="sort-select"
             value={sortBy}
             onChange={(e) => onSortChange(e.target.value as SortKey)}
             className="text-xs py-2 px-3 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white focus:outline-none focus:border-red-500 font-medium"
           >
             {hasVerdicts && <option value="score">Nejlepší nabídky (skóre)</option>}
-            <option value="savings_pct">Největší úspora vs ČR (%)</option>
-            <option value="price_asc">Nejlevnější cena (CZK)</option>
-            <option value="discount_pln">Nejvyšší sleva v letáku (PLN)</option>
+            {hasCzechPrices && <option value="savings_pct">Největší úspora vs ČR (%)</option>}
+            <option value="discount_pct">Největší sleva v letáku (%)</option>
+            <option value="discount_pln">Nejvyšší sleva v letáku (zł)</option>
+            <option value="price_asc">Nejnižší cena</option>
             <option value="title">Název produktu (A–Z)</option>
           </select>
         </div>
@@ -100,6 +114,7 @@ export const FilterToolbar: React.FC<FilterToolbarProps> = ({
           <button
             key={cat.id}
             onClick={() => onCategoryChange(cat.id)}
+            aria-pressed={selectedCategory === cat.id}
             className={`px-3 py-1.5 rounded-lg text-xs font-medium whitespace-nowrap transition-colors ${
               selectedCategory === cat.id
                 ? 'bg-red-50 text-red-700 dark:bg-red-950/60 dark:text-red-300 font-semibold'
@@ -174,6 +189,7 @@ export const FilterToolbar: React.FC<FilterToolbarProps> = ({
               <button
                 key={v.id}
                 onClick={() => onVerdictChange(v.id)}
+                aria-pressed={selectedVerdict === v.id}
                 className={`px-2.5 py-1 rounded-md transition-colors ${
                   selectedVerdict === v.id ? `${v.active} font-semibold` : v.idle
                 }`}
@@ -184,8 +200,8 @@ export const FilterToolbar: React.FC<FilterToolbarProps> = ({
           </div>
         )}
 
-        <div className="text-slate-400 text-[11px] font-mono tabular-nums">
-          Nalezeno {resultsCount} {resultsCount === 1 ? 'položka' : resultsCount < 5 ? 'položky' : 'položek'}
+        <div className="text-slate-600 dark:text-slate-400 text-[11px] font-mono tabular-nums" role="status" aria-live="polite">
+          Nalezeno {resultsCount} {resultsCount === 1 ? 'položka' : resultsCount >= 2 && resultsCount <= 4 ? 'položky' : 'položek'}
         </div>
       </div>
     </div>

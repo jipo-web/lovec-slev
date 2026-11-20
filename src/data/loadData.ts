@@ -68,6 +68,7 @@ export interface LeafletsFile {
 
 async function loadJson<T>(url: string): Promise<T | null> {
   try {
+    // no-cache = revalidate (ETag → 304), not a full download on every visit
     const res = await fetch(url, { cache: 'no-cache' });
     if (!res.ok) return null;
     return (await res.json()) as T;
@@ -116,6 +117,11 @@ export function offerToDealItem(o: PipelineOffer, _rate: number): DealItem {
         ? 'Pozor na podmínky akce'
         : 'Čistá sleva';
 
+  // A limit below the minimum purchase is a misread – show neither number as a limit.
+  const maxQty = cond?.max_qty && !(cond.min_qty && cond.max_qty < cond.min_qty) ? cond.max_qty : undefined;
+  const promoInBundles =
+    !!cond?.multibuy && /\d\s*\+\s*\d|zdarma|gratis|\d\.\s*kus|drug|trzec|czwart/i.test(cond.text ?? '');
+
   return {
     id: o.id,
     store: o.store,
@@ -133,7 +139,9 @@ export function offerToDealItem(o: PipelineOffer, _rate: number): DealItem {
     trickExplanation: cond?.text || o.reason || '',
     requiredCard: cond?.app_only ? (CARD_BY_STORE[o.store] ?? null) : null,
     minQuantity: cond?.min_qty ?? undefined,
-    maxLimit: cond?.max_qty ? `Max ${cond.max_qty} ks` : undefined,
+    maxLimit: maxQty ? `Max ${maxQty} ks` : undefined,
+    maxQuantity: maxQty,
+    promoInBundles,
     validFrom: o.valid_from,
     validUntil: o.valid_to,
     flyerPage: o.page_no,

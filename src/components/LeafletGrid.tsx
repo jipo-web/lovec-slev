@@ -3,6 +3,7 @@ import { PipelineLeaflet } from '../data/loadData';
 import { STORES } from '../data/stores';
 import { LeafletPager } from './LeafletPager';
 import { ExternalLink, BookOpen } from 'lucide-react';
+import { validityInfo } from '../utils/format';
 
 interface LeafletGridProps {
   leaflets: PipelineLeaflet[];
@@ -22,7 +23,8 @@ export const LeafletGrid: React.FC<LeafletGridProps> = ({ leaflets }) => {
   return (
     <>
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5">
-        {leaflets.map((lf) => {
+        {/* Leaflets with extracted offers first; catalogues we only show for browsing after them */}
+        {[...leaflets].sort((a, b) => Number(b.offer_count > 0) - Number(a.offer_count > 0)).map((lf) => {
           const store = STORES[lf.store];
           return (
             <div
@@ -50,11 +52,16 @@ export const LeafletGrid: React.FC<LeafletGridProps> = ({ leaflets }) => {
                   {store.name}
                 </span>
                 <h3 className="text-sm font-bold text-slate-900 dark:text-white leading-snug">{lf.title}</h3>
-                <div className="text-[11px] text-slate-500 dark:text-slate-400 font-mono">
-                  {lf.valid_from} – {lf.valid_to}
+                <div className="text-[11px] text-slate-600 dark:text-slate-400">
+                  {validityInfo(lf.valid_from, lf.valid_to).label}
                 </div>
-                <div className="text-[11px] text-slate-500 dark:text-slate-400">
-                  {lf.pages} stran · {lf.offer_count} nabídek
+                <div className="text-[11px] text-slate-600 dark:text-slate-400">
+                  {lf.pages} {lf.pages === 1 ? 'strana' : lf.pages >= 2 && lf.pages <= 4 ? 'strany' : 'stran'} ·{' '}
+                  {lf.offer_count > 0 ? (
+                    `${lf.offer_count} nabídek v přehledu`
+                  ) : (
+                    <span title="Katalog jsme nezpracovali do přehledu nabídek – lze ho jen prolistovat">jen k prolistování</span>
+                  )}
                 </div>
                 <div className="pt-1 mt-auto flex items-center gap-3 text-[11px] font-medium">
                   <a

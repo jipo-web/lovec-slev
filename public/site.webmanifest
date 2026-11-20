@@ -1,0 +1,13 @@
+{
+  "name": "Lovec-slev.cz – polské akční letáky",
+  "short_name": "Lovec slev",
+  "lang": "cs",
+  "start_url": "./",
+  "display": "standalone",
+  "background_color": "#f8fafc",
+  "theme_color": "#D81E3A",
+  "icons": [
+    { "src": "icon.svg", "sizes": "any", "type": "image/svg+xml" },
+    { "src": "apple-touch-icon.png", "sizes": "180x180", "type": "image/png" }
+  ]
+}

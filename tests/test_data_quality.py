@@ -157,3 +157,46 @@ def test_second_item_percent_is_not_the_offer_discount():
     o = _norm(name="Krem uniwersalny", price_text="9,99", old_price_text="16,99", discount_text="-82%",
               conditions_text="DRUGI 82% TANIEJ, KAŻDA Z 2 SZTUK")
     assert o.discount_pct == 41.2
+
+
+# --- audit 2026-11-19: conditions that change what the shopper pays ---------
+
+@pytest.mark.parametrize("text,min_qty,max_qty", [
+    # the limit counts free pieces: 4 free = 10 pieces at the promo price
+    ("6+4 gratis, z kartą lub aplikacją Moja Biedronka, limit dzienny 4 szt. gratis na kartę MB", 10, 10),
+    ("9 + 9 gratis, Limit: 9 pusz. gratis na paragon", 18, 18),
+    ("2+1 gratis, z kartą lub aplikacją, limit dzienny 2 szt. gratis na kartę MB", 3, 6),
+    ("Z kartą lub aplikacją, przy zakupie 3, limit dzienny 9 szt. na kartę MB.", 3, 9),
+    ("KAŻDA Z 2 SZTUK", 2, None),
+    ("Sześciopak, 6 x 1,89 zł za butelkę", 6, None),
+])
+def test_min_max_quantities(text, min_qty, max_qty):
+    c = parse_conditions(text, "", None)
+    assert c.multibuy and c.min_qty == min_qty and c.max_qty == max_qty
+
+
+def test_limit_below_minimum_is_dropped():
+    c = parse_conditions("3+1 gratis, limit 2 szt.", "", None)
+    assert c.min_qty == 4 and c.max_qty is None
+
+
+def test_conditional_add_on_is_not_a_clean_deal():
+    assert parse_conditions("Kup urządzenie DREAME i dobierz esencję do włosów za 1 zł", "", None).multibuy
+    assert not parse_conditions("+ kaucja 0,50 zł", "", None).multibuy
+
+
+def test_dedupe_keeps_offers_that_differ_for_the_shopper():
+    from datetime import date
+    from pipeline.build import dedupe_offers
+    from pipeline.models import Condition, Offer
+
+    def offer(i, page, max_qty=None, image=None):
+        return Offer(id=f"x:{i}", leaflet_id="lf", store="lidl", page_no=page, name="Masło", name_pl="Masło ekstra 83%",
+                     price_pln=2.99, old_price_pln=4.99, quantity_text="200 g",
+                     conditions=Condition(app_only=True, multibuy=True, min_qty=3, max_qty=max_qty),
+                     category="mlecne", valid_from=date(2026, 11, 16), valid_to=date(2026, 11, 21),
+                     source="vision", image_url=image)
+
+    a, b, c = offer(1, 1), offer(2, 4, image="media/b.webp"), offer(3, 2, max_qty=3)
+    kept = dedupe_offers([a, b, c])
+    assert [o.id for o in kept] == ["x:2", "x:3"]  # same offer twice → the one with a photo; the limited one stays

@@ -14,6 +14,29 @@ def _now() -> str:
     return datetime.now(timezone.utc).astimezone().isoformat(timespec="seconds")
 
 
+def _shopper_key(o) -> tuple:
+    """What a shopper compares: same product, pack, price, validity and conditions.
+
+    Leaflets repeat offers (title page + section page, regional variants). Two
+    rows that differ in any of these stay separate – e.g. one Lidl butter with
+    "max. 3 opak." and one without the limit."""
+    c = o.conditions
+    return (o.store, (o.name_pl or o.name).strip().lower(), o.price_pln, o.old_price_pln, o.quantity_text,
+            str(o.valid_from), str(o.valid_to), c.app_only, c.multibuy, c.min_qty, c.max_qty)
+
+
+def dedupe_offers(offers: list) -> list:
+    """Keep one offer per shopper key; prefer one with a product photo, then the earlier page."""
+    best: dict[tuple, object] = {}
+    for o in offers:
+        k = _shopper_key(o)
+        cur = best.get(k)
+        if cur is None or (bool(o.image_url), -o.page_no) > (bool(cur.image_url), -cur.page_no):
+            best[k] = o
+    keep = {id(o) for o in best.values()}
+    return [o for o in offers if id(o) in keep]
+
+
 def build(con: sqlite3.Connection, rate: float, today: date | None = None, horizon_days: int = 14) -> dict:
     today = today or date.today()
     OUT_DIR.mkdir(parents=True, exist_ok=True)
@@ -24,14 +47,15 @@ def build(con: sqlite3.Connection, rate: float, today: date | None = None, horiz
     images = offer_images(con)
     for o in offers:
         o.image_url = images.get(o.id)
+    counts: dict[str, int] = {}
+    for o in offers:  # leaflet tiles count every offer printed in that leaflet
+        counts[o.leaflet_id] = counts.get(o.leaflet_id, 0) + 1
+    offers = dedupe_offers(offers)
     publish({o.image_url for o in offers if o.image_url})
     offers_json = {"generated_at": _now(), "rate_czk_per_pln": round(rate, 4),
                    "offers": [o.model_dump(mode="json") for o in offers]}
     (OUT_DIR / "offers-latest.json").write_text(json.dumps(offers_json, ensure_ascii=False), encoding="utf-8")
 
-    counts: dict[str, int] = {}
-    for o in offers:
-        counts[o.leaflet_id] = counts.get(o.leaflet_id, 0) + 1
     leaflets = []
     for r in con.execute("SELECT * FROM leaflets WHERE valid_to>=? AND valid_from<=? ORDER BY store, valid_from",
                          (today.isoformat(), until)):

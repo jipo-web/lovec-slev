@@ -3,6 +3,7 @@ import { DealItem, Verdict } from '../types';
 import { STORES } from '../data/stores';
 import { ProductImage } from './ProductImage';
 import { formatCzk, formatNum2, discountPct, MIN_VISIBLE_DISCOUNT_PCT, validityInfo } from '../utils/format';
+import { linePrice } from '../utils/pricing';
 import { Plus, Minus, ShieldCheck, AlertTriangle, AlertCircle, BookOpen, Flame, CalendarClock } from 'lucide-react';
 
 const VERDICT_STYLES: Record<Verdict, { label: string; cls: string }> = {
@@ -66,6 +67,7 @@ export const DealCard: React.FC<DealCardProps> = ({
   const savingsVsCzCzk = hasCzPrice ? Math.max(0, deal.czechEquivalentCzk - promoCzk) : 0;
   const savingsVsCzPct = hasCzPrice ? Math.round((savingsVsCzCzk / deal.czechEquivalentCzk) * 100) : 0;
   const verdictBadge = deal.verdict ? VERDICT_STYLES[deal.verdict] : null;
+  const cartLine = cartQuantity > 0 ? linePrice(deal, cartQuantity) : null;
 
   const pct = discountPct(deal.promoPricePln, deal.regularPricePln);
   const showDiscount = pct != null && pct >= MIN_VISIBLE_DISCOUNT_PCT;
@@ -84,7 +86,7 @@ export const DealCard: React.FC<DealCardProps> = ({
         }
       : deal.trickType === 'conditional_card'
         ? {
-            icon: <AlertCircle className="w-3.5 h-3.5 shrink-0 text-amber-600 dark:text-amber-400" />,
+            icon: <AlertCircle className="w-3.5 h-3.5 shrink-0 text-amber-700 dark:text-amber-400" />,
             cls: 'text-amber-800 dark:text-amber-300',
             text: conditions,
           }
@@ -136,6 +138,7 @@ export const DealCard: React.FC<DealCardProps> = ({
         title="Zobrazit detail a rozbor akce"
       >
         <ProductImage
+          key={deal.id}
           imageUrl={deal.imageUrl}
           pageImageUrl={deal.pageImageUrl}
           bbox={deal.bbox}
@@ -250,18 +253,23 @@ export const DealCard: React.FC<DealCardProps> = ({
           <div className="flex items-center justify-between gap-2 p-1 bg-emerald-50 dark:bg-emerald-950/40 rounded-lg border border-emerald-200 dark:border-emerald-900/60">
             <button
               onClick={() => onUpdateQuantity(deal.id, cartQuantity - 1)}
-              className="w-7 h-7 rounded-md bg-white dark:bg-slate-800 text-emerald-700 dark:text-emerald-400 flex items-center justify-center shadow-xs hover:bg-slate-50 transition-colors"
+              aria-label="Odebrat 1 ks"
+              className="w-9 h-9 rounded-md bg-white dark:bg-slate-800 text-emerald-700 dark:text-emerald-400 flex items-center justify-center shadow-xs hover:bg-slate-50 transition-colors"
               title="Odebrat 1 ks"
             >
               <Minus className="w-3.5 h-3.5" />
             </button>
             <div className="text-center font-mono leading-tight">
               <span className="text-xs font-bold text-emerald-800 dark:text-emerald-300">{cartQuantity} ks v seznamu</span>
-              <span className="text-[10px] text-slate-500 dark:text-slate-400 block">≈ {formatCzk(cartQuantity * promoCzk)}</span>
+              <span className={`text-[10px] block ${cartLine?.notes.length ? 'text-amber-800 dark:text-amber-300 font-semibold' : 'text-slate-600 dark:text-slate-400'}`}>
+                ≈ {formatCzk((cartLine?.totalPln ?? 0) * exchangeRate)}
+                {cartLine?.notes.length ? ' · část za běžnou cenu' : ''}
+              </span>
             </div>
             <button
               onClick={() => onUpdateQuantity(deal.id, cartQuantity + 1)}
-              className="w-7 h-7 rounded-md bg-emerald-700 text-white flex items-center justify-center shadow-xs hover:bg-emerald-800 transition-colors"
+              aria-label="Přidat 1 ks"
+              className="w-9 h-9 rounded-md bg-emerald-700 text-white flex items-center justify-center shadow-xs hover:bg-emerald-800 transition-colors"
               title="Přidat 1 ks"
             >
               <Plus className="w-3.5 h-3.5" />
@@ -270,7 +278,7 @@ export const DealCard: React.FC<DealCardProps> = ({
         ) : (
           <button
             onClick={() => onAddToCart(deal)}
-            className="w-full flex items-center justify-center gap-1.5 py-1.5 px-3 rounded-lg bg-emerald-700 hover:bg-emerald-800 dark:bg-emerald-600 dark:hover:bg-emerald-500 text-white text-xs font-semibold transition-colors"
+            className="w-full min-h-11 flex items-center justify-center gap-1.5 py-2 px-3 rounded-lg bg-emerald-700 hover:bg-emerald-800 dark:bg-emerald-600 dark:hover:bg-emerald-500 text-white text-xs font-semibold transition-colors"
           >
             <Plus className="w-3.5 h-3.5" />
             <span>Do nákupního seznamu</span>

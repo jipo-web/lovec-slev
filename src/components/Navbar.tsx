@@ -33,9 +33,9 @@ export const Navbar: React.FC<NavbarProps> = ({
   return (
     <header className="sticky top-0 z-40 bg-white/95 dark:bg-slate-900/95 backdrop-blur-md border-b border-slate-200 dark:border-slate-800 transition-colors">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-        <div className="flex items-center justify-between gap-8 h-16">
+        <div className="flex items-center justify-between gap-3 md:gap-8 h-16 min-w-0">
           {/* Zone 1: Wordmark */}
-          <div className="flex items-center gap-3 shrink-0">
+          <div className="flex items-center gap-3 min-w-0">
             <a
               href={import.meta.env.BASE_URL}
               onClick={(e) => {
@@ -63,7 +63,7 @@ export const Navbar: React.FC<NavbarProps> = ({
               }`}
             >
               <Tag className="w-4 h-4" />
-              <span>Akce & Srovnání cen</span>
+              <span>Akce</span>
             </button>
 
             <button
@@ -92,7 +92,7 @@ export const Navbar: React.FC<NavbarProps> = ({
           </nav>
 
           {/* Zone 3: Actions & Shopping List CTA */}
-          <div className="flex items-center gap-3 shrink-0">
+          <div className="flex items-center gap-1.5 sm:gap-3 shrink-0">
             {/* Live Exchange Rate Pill */}
             <div className="hidden sm:flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs">
               <span className="text-slate-500 dark:text-slate-400">1 PLN =</span>
@@ -103,6 +103,7 @@ export const Navbar: React.FC<NavbarProps> = ({
                 max="8"
                 value={exchangeRate}
                 onChange={(e) => setExchangeRate(Math.max(3, parseFloat(e.target.value) || 5.85))}
+                aria-label="Kurz: kolik Kč za 1 zł"
                 className="w-12 bg-transparent text-slate-900 dark:text-white font-mono font-bold text-center border-b border-slate-300 dark:border-slate-600 focus:outline-none focus:border-red-500"
                 title="Kliknutím upravíte kurz pro přepočet"
               />
@@ -112,7 +113,7 @@ export const Navbar: React.FC<NavbarProps> = ({
             {/* Dark mode button */}
             <button
               onClick={toggleDarkMode}
-              className="p-2 rounded-lg text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+              className="w-10 h-10 flex items-center justify-center rounded-lg text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
               title={isDarkMode ? 'Přepnout na světlý režim' : 'Přepnout na tmavý režim'}
               aria-label="Přepnout motiv vzhledu"
             >
@@ -122,10 +123,11 @@ export const Navbar: React.FC<NavbarProps> = ({
             {/* Shopping List Button */}
             <button
               onClick={onOpenCart}
-              className="flex items-center gap-2.5 px-3.5 py-2 rounded-lg bg-red-600 hover:bg-red-700 text-white font-medium text-xs shadow-sm transition-all whitespace-nowrap"
+              aria-label={cartCount > 0 ? `Nákupní seznam, ${cartCount} ks` : 'Nákupní seznam'}
+              className="flex items-center gap-2 sm:gap-2.5 h-10 px-3 sm:px-3.5 rounded-lg bg-red-600 hover:bg-red-700 text-white font-medium text-xs shadow-sm transition-all whitespace-nowrap"
             >
-              <ShoppingBag className="w-4 h-4" />
-              <span>Nákupní seznam</span>
+              <ShoppingBag className="w-4 h-4" aria-hidden="true" />
+              <span className="hidden sm:inline">Nákupní seznam</span>
               {cartCount > 0 && (
                 <span className="px-1.5 py-0.2 rounded-full bg-white text-red-700 font-bold text-[11px] font-mono tabular-nums">
                   {cartCount}
@@ -141,32 +143,35 @@ export const Navbar: React.FC<NavbarProps> = ({
         </div>
 
         {/* Mobile secondary tab strip */}
-        <div className="flex md:hidden border-t border-slate-100 dark:border-slate-800 py-2 gap-4 overflow-x-auto text-xs font-medium">
+        <nav aria-label="Sekce webu" className="grid grid-cols-3 md:hidden border-t border-slate-100 dark:border-slate-800 py-1.5 gap-1 text-sm font-medium">
           <button
             onClick={() => setActiveTab('deals')}
-            className={`whitespace-nowrap px-2.5 py-1 rounded ${
+            aria-current={activeTab === 'deals' ? 'page' : undefined}
+            className={`whitespace-nowrap min-h-10 px-2 py-1.5 rounded-lg text-center ${
               activeTab === 'deals' ? 'bg-red-50 text-red-600 dark:bg-red-950/40 dark:text-red-400 font-semibold' : 'text-slate-600 dark:text-slate-400'
             }`}
           >
-            Akce & Srovnání
+            Akce
           </button>
           <button
             onClick={() => setActiveTab('flyers')}
-            className={`whitespace-nowrap px-2.5 py-1 rounded ${
+            aria-current={activeTab === 'flyers' ? 'page' : undefined}
+            className={`whitespace-nowrap min-h-10 px-2 py-1.5 rounded-lg text-center ${
               activeTab === 'flyers' ? 'bg-red-50 text-red-600 dark:bg-red-950/40 dark:text-red-400 font-semibold' : 'text-slate-600 dark:text-slate-400'
             }`}
           >
-            Listování letáky
+            Letáky
           </button>
           <button
             onClick={() => setActiveTab('guide')}
-            className={`whitespace-nowrap px-2.5 py-1 rounded ${
+            aria-current={activeTab === 'guide' ? 'page' : undefined}
+            className={`whitespace-nowrap min-h-10 px-2 py-1.5 rounded-lg text-center ${
               activeTab === 'guide' ? 'bg-red-50 text-red-600 dark:bg-red-950/40 dark:text-red-400 font-semibold' : 'text-slate-600 dark:text-slate-400'
             }`}
           >
-            Příhraniční rádce
+            Rádce
           </button>
-        </div>
+        </nav>
       </div>
     </header>
   );

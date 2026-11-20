@@ -203,7 +203,15 @@ def parse_conditions(text: str | None, price_text: str, discount_text: str | Non
     m = re.search(r"(\d+)\s*szt\w*\.?\s*w cenie\s*(\d+)", s)
     if m:
         hit(int(m.group(1)))
-    if "w zestawie" in s:
+    # "KAŻDA Z 2 SZTUK" (Biedronka): the printed price is per piece when buying 2
+    m = re.search(r"\bkazd[aey]\s+(?:z|za)\s+(\d+)\s*(?:szt|opak|op\b|pusz|butel)", s)
+    if m:
+        hit(int(m.group(1)))
+    # "Sześciopak, 6 x 1,89 zł za butelkę" (Lidl): per-bottle price of the multipack
+    m = re.search(r"(?<![\d,.])(\d{1,2})\s*x\s*\d+[,.]\d{2}\s*zl\s*za\s+(?:butel|pusz|szt|opak|sztuk)", s)
+    if m:
+        hit(int(m.group(1)))
+    if "w zestawie" in s or re.search(r"\bkup\s+zgrzewk", s) or re.search(r"\bkup\b[^.]{0,80}\b(?:dobierz|otrzymasz|dostaniesz)\b", s):
         hit(None)
 
     max_qty = None
@@ -211,6 +219,14 @@ def parse_conditions(text: str | None, price_text: str, discount_text: str | Non
          or re.search(r"\bdo\s+(\d+)\s*(?:szt|opak)\w*\.?\s+na\s+(?:klienta|osobe|paragon)", s))
     if m:
         max_qty = int(m.group(1))
+        # "6+4 gratis, limit dzienny 4 szt. gratis" – the limit counts the free
+        # pieces, not the purchase: 4 free = 10 pieces bought at the promo price.
+        if re.match(r"\s*(?:szt\w*|opak\w*|pusz\w*|butel\w*)?\.?\s*gratis", s[m.end():]):
+            plus = re.search(r"(?<![\d,.])(\d)\s*\+\s*(\d)(?![\d,.])", s)
+            a, b = (int(plus.group(1)), int(plus.group(2))) if plus else (0, 0)
+            max_qty = max_qty // b * (a + b) if a and b and max_qty % b == 0 else None
+    if max_qty is not None and min_qty is not None and max_qty < min_qty:
+        max_qty = None  # contradictory reading – better no limit than "min. 10 · max. 4"
     return Condition(app_only=app, multibuy=multibuy, min_qty=min_qty,
                      max_qty=max_qty, text=orig[:120] or None)
 

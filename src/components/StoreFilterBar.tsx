@@ -76,7 +76,7 @@ export const StoreFilterBar: React.FC<StoreFilterBarProps> = ({
                 <span>Pravidlo pro {currentStoreInfo.name}:</span>
                 <span className="font-normal text-slate-500 dark:text-slate-400">
                   {currentStoreInfo.requiresApp ? (
-                    <span className="text-amber-600 dark:text-amber-400 font-medium">Nutná polská aplikace / karta ({currentStoreInfo.loyaltyCardName})</span>
+                    <span className="text-amber-700 dark:text-amber-400 font-medium">Nutná polská aplikace / karta ({currentStoreInfo.loyaltyCardName})</span>
                   ) : (
                     <span className="text-emerald-600 dark:text-emerald-400 font-medium">Akce pro každého (bez karty!)</span>
                   )}

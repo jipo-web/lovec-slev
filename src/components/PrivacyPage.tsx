@@ -4,7 +4,7 @@ import { ShieldCheck } from 'lucide-react';
 /** Who runs the site and how to reach them – shown on the privacy page. */
 export const OPERATOR = {
   name: 'Provozovatel webu Lovec-slev.cz',
-  email: '',
+  email: 'jiri@polednik.info',
 };
 
 /** Date of the last change of this text (shown on the page). */
@@ -79,15 +79,11 @@ export const PrivacyPage: React.FC = () => (
 
     <H2>Vaše práva a kontakt</H2>
     <p>
-      Provozovatel o vás žádné osobní údaje neshromažďuje, takže k nim nemá co zpřístupnit ani smazat. S dotazem se
-      můžete obrátit na{' '}
-      {OPERATOR.email ? (
-        <a href={`mailto:${OPERATOR.email}`} className="underline underline-offset-2">
-          {OPERATOR.email}
-        </a>
-      ) : (
-        OPERATOR.name
-      )}
+      Provozovatel o vás žádné osobní údaje neshromažďuje, takže k nim nemá co zpřístupnit ani smazat. S dotazy k
+      soukromí i čemukoli jinému na webu pište na{' '}
+      <a href={`mailto:${OPERATOR.email}`} className="underline underline-offset-2">
+        {OPERATOR.email}
+      </a>
       . Máte také právo podat stížnost u{' '}
       <a href="https://uoou.gov.cz/" target="_blank" rel="noopener noreferrer" className="underline underline-offset-2">
         Úřadu pro ochranu osobních údajů

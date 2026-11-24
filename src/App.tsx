@@ -778,7 +778,15 @@ export default function App() {
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex flex-col sm:flex-row items-center justify-between gap-4">
           <div className="flex items-center gap-2">
             <LogoMark className="w-5 h-5 shrink-0 text-slate-800 dark:text-white" />
-            <span><span className="font-bold text-slate-800 dark:text-white">Lovec-slev.cz</span> · Nezávislý srovnávač polských akčních letáků a hlídač chytáků pro české nakupující.</span>
+            <span>
+              <span className="font-bold text-slate-800 dark:text-white">Lovec-slev.cz</span> · Nezávislý srovnávač polských akčních letáků a hlídač chytáků pro české nakupující.
+              <span className="block mt-1">
+                Našel jsi chybu? Napiš na{' '}
+                <a href="mailto:jiri@polednik.info" className="underline underline-offset-2 hover:text-slate-800 dark:hover:text-white">
+                  jiri@polednik.info
+                </a>
+              </span>
+            </span>
           </div>
           <div className="flex flex-wrap items-center justify-center gap-x-4 gap-y-1 text-[11px]">
             <span>Sledujeme: Biedronka · Dino · Lidl · Kaufland</span>

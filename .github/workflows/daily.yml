@@ -114,7 +114,7 @@ jobs:
     runs-on: ubuntu-latest
     environment:
       name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
+      url: ${{ steps.deployment.outputs.page_url || steps.deployment_retry.outputs.page_url }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/download-artifact@v4
@@ -133,7 +133,18 @@ jobs:
       - uses: actions/upload-pages-artifact@v3
         with:
           path: dist
+      # GitHub sometimes lists a just-uploaded artifact with a delay and deploy-pages
+      # then fails with 'No artifacts named "github-pages"'. Wait a bit, and if it
+      # still fails, retry the deploy only. Never use "Re-run" on a failed run: the
+      # upload would run again and the second artifact of the same name breaks it.
+      - run: sleep 20
       - id: deployment
+        continue-on-error: true
+        uses: actions/deploy-pages@v4
+      - if: steps.deployment.outcome == 'failure'
+        run: sleep 60
+      - id: deployment_retry
+        if: steps.deployment.outcome == 'failure'
         uses: actions/deploy-pages@v4
 
   ftp:

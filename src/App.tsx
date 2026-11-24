@@ -226,14 +226,22 @@ export default function App() {
     }
   }, [isDarkMode]);
 
-  // Sync cart
+  // Sync cart (storage can be unavailable, e.g. in private mode – the list then lives only in this tab)
   useEffect(() => {
-    localStorage.setItem('lovci_cart', JSON.stringify(cart));
+    try {
+      localStorage.setItem('lovci_cart', JSON.stringify(cart));
+    } catch {
+      /* ignore */
+    }
   }, [cart]);
 
   // Sync custom items
   useEffect(() => {
-    localStorage.setItem('lovci_custom_items', JSON.stringify(customItems));
+    try {
+      localStorage.setItem('lovci_custom_items', JSON.stringify(customItems));
+    } catch {
+      /* ignore */
+    }
   }, [customItems]);
 
   // Dark mode toggle
@@ -251,6 +259,21 @@ export default function App() {
       return [...prev, { deal, quantity: deal.minQuantity && deal.minQuantity > 1 ? deal.minQuantity : 1 }];
     });
   };
+
+  // The list is kept in the browser until the user deletes items – but an offer
+  // whose promotion has ended is removed (and the user is told which ones).
+  const [expiredRemoved, setExpiredRemoved] = useState<string[]>([]);
+  useEffect(() => {
+    if (dataStatus !== 'ready' || isDemoData) return;
+    const today = toIsoDay(new Date());
+    const ended = cart.filter((item) => item.deal.validUntil && item.deal.validUntil < today);
+    if (ended.length === 0) return;
+    const endedIds = new Set(ended.map((i) => i.deal.id));
+    setCart((prev) => prev.filter((item) => !endedIds.has(item.deal.id)));
+    setExpiredRemoved(ended.map((i) => i.deal.title));
+    // Runs when fresh data arrives (each visit), not on every cart change.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [dataStatus, isDemoData]);
 
   // Cart entries saved before a data refresh keep their old copy of the deal;
   // refresh them so conditions (min/max, regular price) are current.
@@ -574,6 +597,18 @@ export default function App() {
               )
             )}
 
+            {expiredRemoved.length > 0 && !isCartOpen && (
+              <div role="status" className="p-3 rounded-xl bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800 text-xs text-amber-900 dark:text-amber-200 flex items-start justify-between gap-3">
+                <span>
+                  Z nákupního lístku jsme odebrali {expiredRemoved.length === 1 ? 'položku, jejíž akce skončila' : `${expiredRemoved.length} položky, jejichž akce skončily`}:{' '}
+                  <strong>{expiredRemoved.join(', ')}</strong>.
+                </span>
+                <button onClick={() => setExpiredRemoved([])} className="shrink-0 font-semibold underline" aria-label="Zavřít oznámení">
+                  OK
+                </button>
+              </div>
+            )}
+
             {/* Day picker */}
             {generatedAt && <DayPicker selectedDay={selectedDay} onSelectDay={setSelectedDay} />}
 
@@ -769,6 +804,8 @@ export default function App() {
         onAddCustomItem={handleAddCustomItem}
         onRemoveCustomItem={handleRemoveCustomItem}
         onClearCart={handleClearCart}
+        expiredRemoved={expiredRemoved}
+        onDismissExpired={() => setExpiredRemoved([])}
       />
     </div>
   );

@@ -1,7 +1,7 @@
 import React, { useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { copyText, whatsappUrl, smsUrl, nativeShare, canNativeShare } from '../utils/share';
-import { formatNum2 } from '../utils/format';
+import { formatNum2, validityInfo } from '../utils/format';
 import { linePrice } from '../utils/pricing';
 import { CartItem, CustomCartItem, StoreId } from '../types';
 import { STORES } from '../data/stores';
@@ -28,6 +28,9 @@ interface ShoppingListDrawerProps {
   onAddCustomItem: (title: string, pricePln: number) => void;
   onRemoveCustomItem: (id: string) => void;
   onClearCart: () => void;
+  /** Titles of items removed because their promotion ended. */
+  expiredRemoved?: string[];
+  onDismissExpired?: () => void;
 }
 
 export const ShoppingListDrawer: React.FC<ShoppingListDrawerProps> = ({
@@ -41,6 +44,8 @@ export const ShoppingListDrawer: React.FC<ShoppingListDrawerProps> = ({
   onAddCustomItem,
   onRemoveCustomItem,
   onClearCart,
+  expiredRemoved = [],
+  onDismissExpired,
 }) => {
   const [newCustomTitle, setNewCustomTitle] = useState('');
   const [newCustomPrice, setNewCustomPrice] = useState('');
@@ -271,6 +276,19 @@ export const ShoppingListDrawer: React.FC<ShoppingListDrawerProps> = ({
             )}
           </div>
 
+          {expiredRemoved.length > 0 && (
+            <div role="status" className="p-3 rounded-2xl bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs text-slate-700 dark:text-slate-300 flex items-start justify-between gap-3">
+              <span>
+                Akce skončila, odebrali jsme: <strong>{expiredRemoved.join(', ')}</strong>
+              </span>
+              {onDismissExpired && (
+                <button onClick={onDismissExpired} className="shrink-0 underline font-semibold" aria-label="Zavřít oznámení">
+                  OK
+                </button>
+              )}
+            </div>
+          )}
+
           {/* Loyalty App Checklist Alert */}
           {neededApps.length > 0 && (
             <div className="p-3.5 rounded-2xl bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800 text-xs space-y-2">
@@ -313,7 +331,10 @@ export const ShoppingListDrawer: React.FC<ShoppingListDrawerProps> = ({
 
             {cart.length === 0 ? (
               <div className="text-center py-6 text-slate-400 text-xs border border-dashed border-slate-200 dark:border-slate-800 rounded-2xl p-4">
-                Zatím jste nepřidali žádné zboží z letáku. Klikněte na "Přidat do nákupního seznamu" u libovolného produktu.
+                Zatím jste nepřidali žádné zboží z letáku. Klikněte na „Do nákupního seznamu“ u libovolného produktu.
+                <span className="block mt-1.5">
+                  Lístek se ukládá v tomto prohlížeči a zůstane, dokud položky nesmažete. Zboží, jehož akce skončila, odebereme samo.
+                </span>
               </div>
             ) : (
               <div className="space-y-2.5">
@@ -355,6 +376,9 @@ export const ShoppingListDrawer: React.FC<ShoppingListDrawerProps> = ({
                           {deal.promoPricePln.toFixed(2)} PLN/ks ≈ {(deal.promoPricePln * exchangeRate).toFixed(1)} Kč
                           {deal.minQuantity && deal.minQuantity > 1 ? ` · od ${deal.minQuantity} ks` : ''}
                           {deal.maxQuantity ? ` · max. ${deal.maxQuantity} ks` : ''}
+                        </div>
+                        <div className="text-[11px] text-slate-600 dark:text-slate-400">
+                          Akce {validityInfo(deal.validFrom, deal.validUntil).label}
                         </div>
                       </div>
 

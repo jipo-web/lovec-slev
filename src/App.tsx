@@ -15,6 +15,7 @@ import { LeafletGrid } from './components/LeafletGrid';
 import { LeafletPager } from './components/LeafletPager';
 import { ShoppingListDrawer } from './components/ShoppingListDrawer';
 import { BorderShoppingGuide } from './components/BorderShoppingGuide';
+import { PrivacyPage } from './components/PrivacyPage';
 import { ShieldAlert, HelpCircle, Flame, CloudOff, RefreshCw, ExternalLink } from 'lucide-react';
 import { discountPct, MIN_VISIBLE_DISCOUNT_PCT } from './utils/format';
 import { linePrice } from './utils/pricing';
@@ -34,7 +35,9 @@ function formatGeneratedAt(iso: string): string {
 
 export default function App() {
   // Navigation & View tabs
-  const [activeTab, setActiveTab] = useState<'deals' | 'flyers' | 'guide'>('deals');
+  const [activeTab, setActiveTab] = useState<'deals' | 'flyers' | 'guide' | 'privacy'>(() =>
+    typeof window !== 'undefined' && window.location.hash === '#soukromi' ? 'privacy' : 'deals'
+  );
 
   // Filters & Search
   const [selectedStore, setSelectedStore] = useState<StoreId | 'all'>('all');
@@ -69,6 +72,25 @@ export default function App() {
   const [flyerPageView, setFlyerPageView] = useState<{ leaflet: PipelineLeaflet; page: number } | null>(null);
 
   // Logo click: back to the default homepage state
+  // #soukromi opens the privacy page (footer link, shared link, back button)
+  useEffect(() => {
+    const onHash = () => {
+      if (window.location.hash === '#soukromi') {
+        setActiveTab('privacy');
+        window.scrollTo({ top: 0 });
+      } else {
+        setActiveTab((t) => (t === 'privacy' ? 'deals' : t));
+      }
+    };
+    window.addEventListener('hashchange', onHash);
+    return () => window.removeEventListener('hashchange', onHash);
+  }, []);
+  useEffect(() => {
+    if (activeTab !== 'privacy' && window.location.hash === '#soukromi') {
+      history.replaceState(null, '', window.location.pathname + window.location.search);
+    }
+  }, [activeTab]);
+
   const handleGoHome = () => {
     setActiveTab('deals');
     setSelectedStore('all');
@@ -746,6 +768,9 @@ export default function App() {
 
         {/* Tab 3: Cross-border Shopper Guide */}
         {activeTab === 'guide' && <BorderShoppingGuide />}
+
+        {/* Privacy page (#soukromi) */}
+        {activeTab === 'privacy' && <PrivacyPage />}
       </main>
 
       {/* Footer */}
@@ -757,6 +782,17 @@ export default function App() {
           </div>
           <div className="flex flex-wrap items-center justify-center gap-x-4 gap-y-1 text-[11px]">
             <span>Sledujeme: Biedronka · Dino · Lidl · Kaufland</span>
+            <span>·</span>
+            <a
+              href="#soukromi"
+              onClick={() => {
+                setActiveTab('privacy');
+                window.scrollTo({ top: 0 });
+              }}
+              className="underline underline-offset-2"
+            >
+              Soukromí
+            </a>
             <span>·</span>
             <span>Kurz: 1 PLN = {exchangeRate} Kč</span>
             {hasCzechPrices && (

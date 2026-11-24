@@ -3,8 +3,8 @@ import { ShoppingBag, RefreshCw, Sun, Moon, Info, BookOpen, Tag } from 'lucide-r
 import { Logo } from './Logo';
 
 interface NavbarProps {
-  activeTab: 'deals' | 'flyers' | 'guide';
-  setActiveTab: (tab: 'deals' | 'flyers' | 'guide') => void;
+  activeTab: 'deals' | 'flyers' | 'guide' | 'privacy';
+  setActiveTab: (tab: 'deals' | 'flyers' | 'guide' | 'privacy') => void;
   /** Back to the homepage: deals tab, filters reset, scrolled to top. */
   onGoHome: () => void;
   exchangeRate: number;

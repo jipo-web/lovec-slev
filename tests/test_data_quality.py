@@ -200,3 +200,34 @@ def test_dedupe_keeps_offers_that_differ_for_the_shopper():
     a, b, c = offer(1, 1), offer(2, 4, image="media/b.webp"), offer(3, 2, max_qty=3)
     kept = dedupe_offers([a, b, c])
     assert [o.id for o in kept] == ["x:2", "x:3"]  # same offer twice → the one with a photo; the limited one stays
+
+
+def test_reissued_leaflets_show_one_offer():
+    """Biedronka's Monday and Thursday leaflets (and Lidl's weekly 'Rewolucja cenowa')
+    run at the same time and print the same offer – the shopper should see it once."""
+    from datetime import date
+    from pipeline.build import dedupe_offers, merge_reissued
+    from pipeline.models import Condition, Offer
+
+    def offer(i, leaflet, frm, to, price=2.99, qty="1 l", app=False, old=4.79, min_qty=4, image=None):
+        return Offer(id=f"b:{i}", leaflet_id=leaflet, store="biedronka", page_no=i, name="Sok", name_pl="Sok 100% pomarańcza",
+                     price_pln=price, old_price_pln=old, quantity_text=qty,
+                     conditions=Condition(app_only=app, multibuy=True, min_qty=min_qty), category="napoje",
+                     valid_from=date(2026, 11, frm), valid_to=date(2026, 11, to) if to > 20 else date(2026, 12, to),
+                     source="vision", image_url=image)
+
+    mon = offer(1, "mon", 23, 28, app=True, image="media/a.webp")
+    thu = offer(2, "thu", 26, 2, qty="1 L + kaucja 0,50 zł", old=None)
+    other_price = offer(3, "thu", 26, 2, price=3.49)
+    other_mechanic = offer(4, "thu", 26, 2, min_qty=None)
+    later = offer(5, "next", 23, 28)  # starts after a gap → a separate offer
+    later.valid_from, later.valid_to = date(2026, 12, 10), date(2026, 12, 16)
+
+    kept = merge_reissued(dedupe_offers([mon, thu, other_price, other_mechanic, later]))
+    assert [o.id for o in kept] == ["b:1", "b:3", "b:4", "b:5"]
+    assert (mon.valid_from, mon.valid_to) == (date(2026, 11, 23), date(2026, 12, 2))  # union of both leaflets
+    assert mon.conditions.app_only and mon.old_price_pln == 4.79
+
+    # Same leaflet, different limit → stays two offers (deliberate in dedupe_offers)
+    a, b = offer(6, "lf", 23, 28), offer(7, "lf", 23, 28, app=True)
+    assert len(merge_reissued([a, b])) == 2

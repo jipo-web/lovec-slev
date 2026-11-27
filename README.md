@@ -17,7 +17,7 @@ public/data offers-latest.json, leaflets.json, group-promos.json – výstup pip
 | --- | --- | --- |
 | Dino | `marketdino.pl/gazetki/lista/standard/_payload.json` – Nuxt payload s PDF, obrázky stránek a hotspoty (název, EAN, cena, pozice) | **strukturovaně, bez modelu** |
 | Lidl.pl | ESI přehled `esi.leaflets.schwarz/overview?client_locale=lidl/pl-PL` → `endpoints.leaflets.schwarz/v4/flyer?flyer_identifier=…` (platnost, PDF, obrázky stránek 1200 px) | vision model na obrázcích stránek; non-food produkty z API |
-| Kaufland.pl | stejné API s `client_locale=kaufland/pl-PL&region_id=…` (web kaufland.pl blokuje datacentra, API ne) | vision model |
+| Kaufland.pl | stejné API s `client_locale=kaufland/pl-PL&region_id=…` (web kaufland.pl blokuje datacentra, API ne); od 26. 11. 2026 je celostátní přehled prázdný, proto záloha [gazetkipromocyjne.net/kaufland](https://www.gazetkipromocyjne.net/kaufland/) (obrázky 908 px + PDF) | vision model |
 | Biedronka | `biedronka.pl/pl/gazetki` → stránka letáku → `galleryLeaflet.init("<uuid>")` → `leaflet-api.prod.biedronka.cloud/api/leaflets/<uuid>?ctx=web` (jen obrázky stránek; platnost „od“ ze slugu, „do“ odhad podle cyklu) | vision model |
 
 PDF textová vrstva (Lidl/Kaufland) byla vyzkoušena a je nepoužitelná – ceny najde, názvy ne
